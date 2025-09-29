@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  security-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: security-agent-portfolio
+    ports:
+      - "8501:8501"  # Streamlit UI
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-openai/gpt-4-turbo-preview}
+      - TEMPERATURE=${TEMPERATURE:-0.3}
+      - MAX_TOKENS=${MAX_TOKENS:-4096}
+    volumes:
+      - ./logs:/app/logs
+      - ./demo:/app/demo:ro
+      - ./results:/app/results
+    working_dir: /app
+    command: streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port 8501
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  trivy:
+    image: aquasec/trivy:latest
+    container_name: trivy-scanner
+    volumes:
+      - ./demo:/workspace:ro
+      - trivy-cache:/root/.cache/trivy
+    command: --help
+    profiles:
+      - tools
+
+volumes:
+  trivy-cache:
+    driver: local
+
+networks:
+  default:
+    name: security-agent-network

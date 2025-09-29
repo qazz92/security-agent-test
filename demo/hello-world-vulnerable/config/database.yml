@@ -1,0 +1,30 @@
+# 취약한 데이터베이스 설정 파일
+development:
+  adapter: postgresql
+  database: myapp_development
+  # 취약점 1: 하드코딩된 데이터베이스 자격증명
+  username: admin
+  password: password123
+  host: localhost
+  port: 5432
+  # 취약점 2: SSL 비활성화
+  sslmode: disable
+
+test:
+  adapter: postgresql
+  database: myapp_test
+  username: root
+  password: ""  # 취약점 3: 빈 비밀번호
+  host: localhost
+  port: 5432
+
+production:
+  adapter: postgresql
+  database: myapp_production
+  # 취약점 4: 프로덕션에서도 약한 자격증명
+  username: admin
+  password: SuperSecretPassword123!
+  host: production-db.company.com
+  port: 5432
+  # 취약점 5: 연결 풀 설정 없음 (DoS 가능)
+  pool: 1000

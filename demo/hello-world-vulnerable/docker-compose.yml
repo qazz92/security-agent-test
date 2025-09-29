@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      # 취약점 1: 모든 인터페이스에 바인딩
+      - "0.0.0.0:5000:5000"
+    environment:
+      # 취약점 2: 환경 변수에 하드코딩된 시크릿
+      - SECRET_KEY=my-super-secret-key
+      - DEBUG=True
+      - DATABASE_URL=postgresql://admin:password123@db:5432/myapp
+    volumes:
+      # 취약점 3: 호스트 파일시스템 마운트
+      - /:/host_root:ro
+      - ./uploads:/app/uploads
+    # 취약점 4: 특권 모드로 실행
+    privileged: true
+    # 취약점 5: 보안 옵션 비활성화
+    security_opt:
+      - seccomp:unconfined
+    # 취약점 6: 네트워크 모드를 host로 설정
+    network_mode: host
+
+  db:
+    image: postgres:9.6  # 취약점 7: 오래된 PostgreSQL 버전
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123  # 취약점 8: 약한 비밀번호
+    ports:
+      # 취약점 9: 데이터베이스 포트를 외부에 노출
+      - "5432:5432"
+    volumes:
+      # 취약점 10: 데이터베이스 데이터를 호스트에 저장
+      - ./data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:4.0  # 취약점 11: 오래된 Redis 버전
+    ports:
+      # 취약점 12: Redis를 외부에 노출 (인증 없음)
+      - "6379:6379"
+    # 취약점 13: Redis에 비밀번호 설정하지 않음
+    command: redis-server --protected-mode no
