@@ -1,5 +1,6 @@
 -- Langfuse Demo Setup: Auto-create user, organization, project, and API keys
 -- This allows immediate access to Langfuse web UI without manual setup
+-- Note: This script is executed by a separate init container after Langfuse server is ready
 
 -- Step 1: Create demo user with hashed password
 -- Password: demo1234 (bcrypt hash)
@@ -57,6 +58,9 @@ VALUES (
 ) ON CONFLICT (project_id, user_id) DO NOTHING;
 
 -- Step 6: Create demo API keys
+-- Public Key: pk-lf-4c97a46c-5cae-4368-b5d1-44939ea97e43
+-- Secret Key: sk-lf-4e9dcf62-9cf7-4233-bb5c-d3c3d910fa16
+-- (These keys are safe for portfolio demonstration)
 INSERT INTO api_keys (
     id,
     created_at,
@@ -71,12 +75,14 @@ VALUES (
     'demo-api-key-id-12345',
     NOW(),
     'Demo API Key (Auto-generated)',
-    'pk-lf-demo-portfolio-public-key-1234567890',
-    'sk-lf-demo-portfolio-secret-key-1234567890abcdef',
-    'sk-lf-demo-portfolio-secret-key-1234567890abcdef',
-    'sk-lf-****7890',
+    'pk-lf-4c97a46c-5cae-4368-b5d1-44939ea97e43',
+    '$2a$11$6HRoXAqWh97Bly4ATDhc2.YeuzRRiEDM63TZ6RMMKHIORVQzDPyNW',
+    '576700f4be8ad2137da2754c0f8f3dae0bf37b865a5e7030022970e98e7ed680',
+    'sk-lf-****fa16',
     'demo-project-id-12345'
-) ON CONFLICT (public_key) DO NOTHING;
+) ON CONFLICT (public_key) DO UPDATE SET
+    hashed_secret_key = EXCLUDED.hashed_secret_key,
+    fast_hashed_secret_key = EXCLUDED.fast_hashed_secret_key;
 
 -- Print confirmation
 DO $$
@@ -92,8 +98,8 @@ BEGIN
     RAISE NOTICE '  Password: demo1234';
     RAISE NOTICE '';
     RAISE NOTICE 'API Keys (already configured in .env):';
-    RAISE NOTICE '  Public: pk-lf-demo-portfolio-public-key-1234567890';
-    RAISE NOTICE '  Secret: sk-lf-demo-portfolio-secret-key-1234567890abcdef';
+    RAISE NOTICE '  Public: pk-lf-4c97a46c-5cae-4368-b5d1-44939ea97e43';
+    RAISE NOTICE '  Secret: sk-lf-4e9dcf62-9cf7-4233-bb5c-d3c3d910fa16';
     RAISE NOTICE '==============================================';
     RAISE NOTICE '';
 END $$;

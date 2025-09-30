@@ -11,16 +11,14 @@ from langchain_openai import ChatOpenAI
 try:
     from langfuse.callback import CallbackHandler
 except ImportError:
-    try:
-        from langfuse import CallbackHandler
-    except ImportError:
-        CallbackHandler = None
+    CallbackHandler = None
 
 from ..models.llm_config import get_llm_config
 from ..utils.prompt_manager import load_prompt, PromptLoadError
 from ..utils.model_selector import get_model_selector, TaskComplexity
 # Import CrewAI-wrapped tools (functions with @tool decorator)
-from ..tools import scanner_tools, semgrep_tools, analysis_tools, fix_tools, github_tools
+from ..tools import scanner_tools, semgrep_tools, analysis_tools, github_tools
+from ..tools import fix_tools_v2 as fix_tools  # ← V2 사용 (자동 타입 정규화)
 
 logger = logging.getLogger(__name__)
 
@@ -43,32 +41,67 @@ class SecurityCrewManager:
         # Model Selector 초기화 (Dual Model Strategy)
         self.model_selector = get_model_selector()
 
-        # Langfuse 콜백 초기화 (선택적)
+        # Langfuse 초기화 (LiteLLM 통합 방식)
         self.langfuse_handler = None
-        if CallbackHandler is not None:
-            try:
-                langfuse_public_key = os.getenv('LANGFUSE_PUBLIC_KEY')
-                langfuse_secret_key = os.getenv('LANGFUSE_SECRET_KEY')
+        self.langfuse_client = None
 
-                if langfuse_public_key and not langfuse_public_key.startswith('pk-lf-your'):
+        try:
+            import litellm
+            from langfuse import Langfuse
+
+            langfuse_public_key = os.getenv('LANGFUSE_PUBLIC_KEY')
+            langfuse_secret_key = os.getenv('LANGFUSE_SECRET_KEY')
+            langfuse_host = os.getenv('LANGFUSE_HOST', 'http://langfuse-server:3000')
+
+            if langfuse_public_key and not langfuse_public_key.startswith('pk-lf-your'):
+                # LiteLLM Langfuse 통합 설정
+                litellm.success_callback = ["langfuse"]
+                litellm.failure_callback = ["langfuse"]
+
+                # Langfuse 환경변수 설정 (LiteLLM이 자동으로 사용)
+                os.environ["LANGFUSE_PUBLIC_KEY"] = langfuse_public_key
+                os.environ["LANGFUSE_SECRET_KEY"] = langfuse_secret_key
+                os.environ["LANGFUSE_HOST"] = langfuse_host
+
+                # LiteLLM이 OpenRouter를 기본 provider로 사용하도록 설정
+                litellm.set_verbose = True
+                os.environ["OPENROUTER_API_KEY"] = os.getenv('OPENROUTER_API_KEY')
+
+                logger.info(f"✅ LiteLLM configured for OpenRouter")
+
+                # Langfuse Client 초기화
+                self.langfuse_client = Langfuse(
+                    public_key=langfuse_public_key,
+                    secret_key=langfuse_secret_key,
+                    host=langfuse_host,
+                    flush_at=1,
+                    flush_interval=0.1
+                )
+
+                # LangChain CallbackHandler (보조용)
+                if CallbackHandler is not None:
                     self.langfuse_handler = CallbackHandler(
                         public_key=langfuse_public_key,
                         secret_key=langfuse_secret_key,
-                        host=os.getenv('LANGFUSE_HOST', 'https://cloud.langfuse.com')
+                        host=langfuse_host,
+                        flush_at=1,
+                        flush_interval=0.1
                     )
-                    logger.info("✅ Langfuse tracing enabled")
-                else:
-                    logger.info("ℹ️ Langfuse not configured, skipping tracing")
-            except Exception as e:
-                logger.warning(f"⚠️ Langfuse initialization failed: {e}")
-                self.langfuse_handler = None
-        else:
-            logger.warning("⚠️ Langfuse module not found, skipping tracing")
+
+                logger.info(f"✅ Langfuse tracing enabled (LiteLLM integration): {langfuse_host}")
+                logger.info(f"   Public Key: {langfuse_public_key}")
+            else:
+                logger.info("ℹ️ Langfuse not configured, skipping tracing")
+        except Exception as e:
+            logger.warning(f"⚠️ Langfuse initialization failed: {e}")
+            self.langfuse_handler = None
+            self.langfuse_client = None
 
         # Callbacks 리스트 생성
         callbacks = [self.llm_config.token_callback]
         if self.langfuse_handler:
             callbacks.append(self.langfuse_handler)
+            logger.info(f"✅ Callbacks configured: {len(callbacks)} callbacks")
 
         # Dual Model Strategy: 각 Agent별 적절한 모델 선택
         # Security Analyst: THINKING model (복잡한 취약점 분석)
@@ -242,6 +275,7 @@ class SecurityCrewManager:
         """분석 태스크 생성 (계층적 워크플로우)"""
 
         # Task 1: 의존성 취약점 스캔 (Trivy)
+        logger.info("📋 [TASK 1/4] Creating Dependency Vulnerability Scan task")
         dependency_scan_task = Task(
             description=f"""
 Perform comprehensive dependency vulnerability scanning on the project at: {project_path}
@@ -266,6 +300,7 @@ Focus on accuracy and completeness. Do not miss any vulnerabilities.
         )
 
         # Task 2: 코드 레벨 취약점 스캔 (Semgrep SAST)
+        logger.info("📋 [TASK 2/4] Creating SAST Code Vulnerability Scan task")
         code_scan_task = Task(
             description=f"""
 Perform deep static code analysis (SAST) on the project at: {project_path}
@@ -297,6 +332,7 @@ Focus on real exploitable vulnerabilities, not just theoretical issues.
         )
 
         # Task 3: 통합 우선순위 평가 및 리스크 분석
+        logger.info("📋 [TASK 3/4] Creating Vulnerability Triage & Risk Analysis task")
         triage_task = Task(
             description=f"""
 Analyze ALL discovered vulnerabilities (both dependency and code-level) and prioritize them for remediation.
@@ -327,6 +363,7 @@ Prioritize code-level vulnerabilities (SQL Injection, XSS, etc.) higher than out
         )
 
         # Task 4: 수정 방안 생성 및 PR 자동화
+        logger.info("📋 [TASK 4/4] Creating Security Remediation & PR Creation task")
         remediation_task = Task(
             description=f"""
 Generate automated security fixes and create a GitHub Pull Request.
@@ -415,8 +452,21 @@ Deliver:
 
         try:
             # Crew 실행
-            logger.info("🎬 CrewAI kickoff - agents are starting their work...")
+            logger.info("="*70)
+            logger.info("🎬 CREWAI EXECUTION START")
+            logger.info("="*70)
+            logger.info("👥 Active Agents:")
+            logger.info("   1. Security Analyst (Trivy Scanner)")
+            logger.info("   2. Semgrep Specialist (SAST Scanner)")
+            logger.info("   3. Triage Specialist (Risk Analyzer)")
+            logger.info("   4. Remediation Engineer (Fix Generator)")
+            logger.info("="*70)
+
             result = crew.kickoff()
+
+            logger.info("="*70)
+            logger.info("🎬 CREWAI EXECUTION COMPLETED")
+            logger.info("="*70)
 
             logger.info("="*70)
             logger.info("✅ CREWAI ANALYSIS COMPLETED")
@@ -427,6 +477,25 @@ Deliver:
 
             # 비용 데이터 가져오기
             usage_report = self.model_selector.get_usage_report()
+
+            # Langfuse trace flush (즉시 전송)
+            if self.langfuse_handler or self.langfuse_client:
+                try:
+                    logger.info("📤 Flushing Langfuse traces to server...")
+
+                    # CallbackHandler flush
+                    if self.langfuse_handler:
+                        self.langfuse_handler.langfuse.flush()
+                        logger.info("   ✅ CallbackHandler traces flushed")
+
+                    # Client flush
+                    if self.langfuse_client:
+                        self.langfuse_client.flush()
+                        logger.info("   ✅ Langfuse client traces flushed")
+
+                    logger.info("✅ All Langfuse traces sent successfully")
+                except Exception as e:
+                    logger.error(f"❌ Failed to flush Langfuse traces: {e}")
 
             return {
                 "success": True,
