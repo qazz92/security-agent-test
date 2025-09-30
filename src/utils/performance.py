@@ -19,8 +19,8 @@ class PerformanceTracker:
 
     def __init__(self, max_history: int = 1000):
         self.max_history = max_history
-        self.reset_metrics()
         self.lock = threading.Lock()
+        self.reset_metrics()
 
     def reset_metrics(self):
         """메트릭 초기화"""

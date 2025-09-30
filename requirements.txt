@@ -1,12 +1,23 @@
-langchain==0.1.0
-langchain-community==0.0.10
-langchain-openai==0.0.5
-openai==1.12.0
-streamlit==1.31.0
-python-dotenv==1.0.0
-pydantic==2.5.3
-pyyaml==6.0.1
-requests==2.31.0
-asyncio==3.4.3
-pytest==7.4.0
-pytest-asyncio==0.21.1
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-openai>=0.1.0
+openai>=1.30.0
+streamlit>=1.35.0
+python-dotenv>=1.0.0
+pydantic>=2.8.0
+pyyaml>=6.0.1
+requests>=2.31.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+plotly>=5.0.0
+jinja2>=3.1.0
+
+# CrewAI for multi-agent orchestration
+crewai>=0.60.0
+crewai-tools>=0.12.0
+
+# Langfuse for LLM observability and tracing
+langfuse>=2.40.0
+
+# Semgrep for SAST code analysis
+semgrep>=1.50.0

@@ -197,6 +197,141 @@ def upload_file():
     </form>
     '''
 
+# 취약점 13: SSRF (Server-Side Request Forgery)
+@app.route('/fetch_url')
+def fetch_url():
+    import requests
+    url = request.args.get('url', '')
+    if url:
+        try:
+            # 위험! 사용자가 제공한 URL로 요청 - SSRF 취약점
+            # 공격자가 내부 네트워크 스캔 가능 (예: http://localhost:22, http://169.254.169.254/latest/meta-data/)
+            response = requests.get(url, timeout=5)
+            return f"<h2>Fetched Content</h2><pre>{response.text[:1000]}</pre>"
+        except Exception as e:
+            return f"Error: {e}"
+    else:
+        return '''
+        <h2>Fetch URL</h2>
+        <form>
+            <input type="text" name="url" placeholder="Enter URL">
+            <button type="submit">Fetch</button>
+        </form>
+        '''
+
+# 취약점 14: XXE (XML External Entity)
+@app.route('/parse_xml', methods=['POST'])
+def parse_xml():
+    import xml.etree.ElementTree as ET
+    xml_data = request.form['xml']
+    try:
+        # 위험! 외부 엔티티 처리가 활성화된 XML 파싱
+        # 공격자가 로컬 파일 읽기 가능 (예: <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>)
+        root = ET.fromstring(xml_data)
+        return f"<h2>Parsed XML</h2><p>Root tag: {root.tag}</p>"
+    except Exception as e:
+        return f"Error: {e}"
+
+# 취약점 15: Open Redirect
+@app.route('/redirect')
+def redirect_user():
+    # 위험! 사용자 입력으로 리디렉션 URL 결정
+    # 피싱 공격에 악용 가능 (예: /redirect?url=http://evil.com)
+    redirect_url = request.args.get('url', '/')
+    return redirect(redirect_url)
+
+# 취약점 16: IDOR (Insecure Direct Object Reference)
+@app.route('/profile/<int:user_id>')
+def view_profile(user_id):
+    # 위험! 권한 검증 없이 모든 사용자 프로필 접근 가능
+    # 공격자가 user_id를 변경하여 다른 사용자 정보 조회
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user:
+        return f'''
+        <h2>User Profile #{user_id}</h2>
+        <p>Username: {user[1]}</p>
+        <p>Email: {user[3]}</p>
+        <p>Password Hash: {user[2]}</p>
+        '''
+    return "User not found"
+
+# 취약점 17: Race Condition (TOCTOU)
+@app.route('/withdraw', methods=['POST'])
+def withdraw_money():
+    # 위험! Race condition 취약점
+    # 동시 요청으로 잔액 이상 출금 가능
+    user_id = request.form.get('user_id')
+    amount = int(request.form.get('amount', 0))
+
+    # Check balance (Time-of-Check)
+    balance = get_balance(user_id)
+    if balance >= amount:
+        # Use balance (Time-of-Use) - 여기서 race condition 발생
+        import time
+        time.sleep(0.1)  # 의도적 지연
+        new_balance = balance - amount
+        update_balance(user_id, new_balance)
+        return f"Withdrawn ${amount}. New balance: ${new_balance}"
+    else:
+        return "Insufficient funds"
+
+def get_balance(user_id):
+    return 1000  # 시뮬레이션용
+
+def update_balance(user_id, balance):
+    pass  # 시뮬레이션용
+
+# 취약점 18: Weak Cryptography
+@app.route('/encrypt')
+def encrypt_data():
+    import hashlib
+    data = request.args.get('data', '')
+    # 위험! MD5는 더 이상 안전하지 않음
+    hash_value = hashlib.md5(data.encode()).hexdigest()
+    return f"<p>MD5 Hash: {hash_value}</p>"
+
+# 취약점 19: Insufficient Logging
+@app.route('/login', methods=['POST'])
+def login():
+    username = request.form.get('username')
+    password = request.form.get('password')
+    # 위험! 실패한 로그인 시도가 로깅되지 않음
+    # 무차별 대입 공격 탐지 불가
+    if username == 'admin' and password == 'password123':
+        session['user'] = username
+        return "Login successful"
+    else:
+        return "Login failed"  # 로깅 없음
+
+# 취약점 20: Mass Assignment
+@app.route('/update_user', methods=['POST'])
+def update_user():
+    user_id = request.form.get('user_id')
+    # 위험! 모든 form 필드를 직접 DB에 업데이트
+    # 공격자가 is_admin=true 같은 필드를 추가 가능
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+
+    # 의도: username, email만 업데이트
+    # 실제: form에서 받은 모든 필드 업데이트 가능
+    update_fields = []
+    for key, value in request.form.items():
+        if key != 'user_id':
+            update_fields.append(f"{key} = '{value}'")
+
+    if update_fields:
+        query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = {user_id}"
+        cursor.execute(query)
+        conn.commit()
+    conn.close()
+
+    return "User updated successfully"
+
 if __name__ == '__main__':
     init_db()
     os.makedirs('uploads', exist_ok=True)
