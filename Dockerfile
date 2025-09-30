@@ -1,25 +1,26 @@
 # SecurityAgent Portfolio - Production Dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # 메타데이터
 LABEL maintainer="SecurityAgent Portfolio" \
       description="AI-Powered Security Vulnerability Analysis System" \
       version="1.0.0"
 
-# 보안 강화: 비루트 사용자 생성
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# 보안 강화: 비루트 사용자 생성 (홈 디렉토리 포함)
+RUN groupadd -r appuser && useradd -r -g appuser -m -d /home/appuser appuser
 
 # 시스템 패키지 업데이트 및 필수 도구 설치
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
+    gnupg \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Trivy 설치 (보안 스캐너)
-RUN wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add - \
-    && echo "deb https://aquasecurity.github.io/trivy-repo/deb generic main" | tee -a /etc/apt/sources.list \
+# Trivy 설치 (보안 스캐너) - 최신 방법
+RUN wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | tee /usr/share/keyrings/trivy.gpg > /dev/null \
+    && echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | tee -a /etc/apt/sources.list.d/trivy.list \
     && apt-get update \
     && apt-get install -y trivy \
     && rm -rf /var/lib/apt/lists/*
@@ -45,7 +46,14 @@ COPY .env.example .
 
 # 로그 및 결과 디렉토리 생성
 RUN mkdir -p logs results \
-    && chown -R appuser:appuser /app
+    && chown -R appuser:appuser /app \
+    && mkdir -p /home/appuser/.streamlit \
+    && chown -R appuser:appuser /home/appuser
+
+# Streamlit 설정 파일 생성
+RUN echo '[general]\nemail = ""\n' > /home/appuser/.streamlit/credentials.toml \
+    && echo '[server]\nheadless = true\nenableCORS = false\n' > /home/appuser/.streamlit/config.toml \
+    && chown -R appuser:appuser /home/appuser/.streamlit
 
 # 보안: 비루트 사용자로 전환
 USER appuser

@@ -16,7 +16,8 @@ SecurityAgent는 OpenRouter API와 LangChain을 활용하여 실제 프로젝트
 ### ✨ 핵심 특징
 
 - **🤖 Multi-Agent 협업**: 보안 분석과 수정 방안 생성을 전담하는 전문 에이전트들
-- **🔧 7개 Tool Chaining**: Trivy, 정적 분석, 수정 코드 생성 등 실무 도구 오케스트레이션
+- **🔧 13개 Tool Chaining**: Trivy, 정적 분석, 수정 코드 생성, GitHub PR 자동 생성 등
+- **🚀 GitHub 자동 PR**: 분석 후 실제 GitHub에 Pull Request 자동 생성 (GitHub CLI 연동)
 - **📊 실시간 웹 UI**: Streamlit 기반 대시보드와 성능 모니터링
 - **📈 성능 추적**: Tool 호출 시간, 토큰 사용량, 성공률 등 상세 메트릭
 - **🎯 실제 취약점**: 의도적으로 생성된 취약한 데모 프로젝트로 End-to-End 시연
@@ -49,13 +50,26 @@ graph TD
 
 ### 🛠️ Tool Calling Flow
 
+**보안 분석 Tools:**
 1. **fetch_project_info**: 프로젝트 메타데이터 수집
 2. **scan_with_trivy**: 실제 Trivy를 통한 취약점 스캔
 3. **analyze_dependencies**: CVE 데이터베이스 기반 종속성 분석
 4. **check_security_configs**: 정적 코드 분석 (SAST)
-5. **generate_fix_code**: 취약점별 구체적 수정 코드 생성
-6. **create_pr_template**: GitHub PR 템플릿 자동 생성
-7. **calculate_priority_score**: CVSS 기반 우선순위 계산
+5. **calculate_priority_score**: CVSS 기반 우선순위 계산
+
+**수정 방안 Tools:**
+6. **generate_fix_code**: 취약점별 구체적 수정 코드 생성
+7. **create_pr_template**: GitHub PR 템플릿 자동 생성
+8. **generate_security_documentation**: 보안 문서 자동 생성
+9. **generate_fix_script**: 자동화 스크립트 생성
+
+**GitHub 연동 Tools:**
+10. **create_github_pr**: ⭐ GitHub에 실제 PR 자동 생성 (NEW!)
+11. **create_github_issue**: GitHub Issue 자동 생성
+
+**분석 Tools:**
+12. **analyze_vulnerability_trends**: 취약점 트렌드 분석
+13. **generate_security_metrics**: 보안 메트릭 계산
 
 ## 🚀 빠른 시작
 
@@ -66,6 +80,26 @@ git clone https://github.com/your-username/security-agent-portfolio.git
 cd security-agent-portfolio
 pip install -r requirements.txt
 ```
+
+### 1.5 GitHub CLI 설치 (선택사항 - PR 자동 생성용)
+
+**자동 PR 생성 기능을 사용하려면:**
+
+```bash
+# macOS
+brew install gh
+
+# Ubuntu/Debian
+sudo apt install gh
+
+# Windows
+winget install --id GitHub.cli
+
+# 인증
+gh auth login
+```
+
+> 💡 **GitHub CLI 없이도** PR 템플릿 생성까지는 사용 가능합니다!
 
 ### 2. 환경 설정
 

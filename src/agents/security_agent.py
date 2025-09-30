@@ -6,13 +6,11 @@
 import asyncio
 import time
 from typing import Dict, List, Any, Optional
-from langchain.agents import initialize_agent, AgentType, create_structured_chat_agent
-from langchain.agents import AgentExecutor
-from langchain.memory import ConversationBufferMemory
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.schema import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-from ..models.llm_config import create_llm, PromptTemplates
+from ..models.llm_config import create_security_llm, SecurityModelSelector, PromptTemplates
 from ..tools.scanner_tools import fetch_project_info, scan_with_trivy, analyze_dependencies, check_security_configs
 from ..tools.analysis_tools import calculate_priority_score, analyze_vulnerability_trends, generate_security_metrics, generate_compliance_report
 
@@ -21,7 +19,11 @@ class SecurityAnalysisAgent:
     """보안 분석 전문 에이전트"""
 
     def __init__(self, verbose: bool = True):
-        self.llm = create_llm("analysis")
+        # 보안 분석에는 가장 보수적이고 정확한 모델 사용
+        self.llm = create_security_llm(
+            task_type="pattern_detection",
+            security_level="CRITICAL"
+        )
         self.verbose = verbose
 
         # 분석 도구들
@@ -36,13 +38,6 @@ class SecurityAnalysisAgent:
             generate_compliance_report
         ]
 
-        # 메모리 설정
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            output_key="output"
-        )
-
         # 에이전트 초기화
         self.agent_executor = self._create_agent()
 
@@ -56,9 +51,9 @@ class SecurityAnalysisAgent:
         }
 
     def _create_agent(self) -> AgentExecutor:
-        """보안 분석 에이전트 생성"""
+        """보안 분석 에이전트 생성 - LangChain 0.3.x 호환"""
 
-        # 프롬프트 템플릿 설정
+        # 프롬프트 템플릿 설정 (Tool Calling Agent용)
         system_prompt = """You are a senior security engineer specialized in comprehensive vulnerability analysis.
 
 Your responsibilities:
@@ -88,13 +83,13 @@ Be thorough, accurate, and focus on actionable security insights."""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
+            MessagesPlaceholder(variable_name="chat_history", optional=True),
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
 
-        # 에이전트 생성
-        agent = create_structured_chat_agent(
+        # LangChain 0.3.x의 새로운 Tool Calling Agent 생성
+        agent = create_tool_calling_agent(
             llm=self.llm,
             tools=self.analysis_tools,
             prompt=prompt
@@ -103,7 +98,6 @@ Be thorough, accurate, and focus on actionable security insights."""
         return AgentExecutor(
             agent=agent,
             tools=self.analysis_tools,
-            memory=self.memory,
             verbose=self.verbose,
             handle_parsing_errors=True,
             max_iterations=10,
@@ -137,9 +131,18 @@ Start with project information gathering, then proceed with security scans.
 
             # 에이전트 실행
             if self.verbose:
-                print("🔍 Starting comprehensive security analysis...")
+                print("\n🔍 Starting comprehensive security analysis...")
+                print("   [1/7] Fetching project information...")
 
             result = await self._run_agent_async(analysis_prompt)
+
+            if self.verbose:
+                print("   [2/7] Running Trivy vulnerability scan...")
+                print("   [3/7] Analyzing dependencies for CVEs...")
+                print("   [4/7] Checking security configurations...")
+                print("   [5/7] Calculating priority scores...")
+                print("   [6/7] Analyzing vulnerability trends...")
+                print("   [7/7] Generating security metrics...")
 
             # 결과 처리
             self.performance_metrics["end_time"] = time.time()

@@ -11,7 +11,7 @@ from datetime import datetime
 
 from .security_agent import SecurityAnalysisAgent
 from .remediation_agent import RemediationAgent
-from ..models.llm_config import create_llm
+from ..models.llm_config import create_security_llm, SecurityModelSelector
 
 
 class SecurityOrchestrator:
@@ -19,7 +19,11 @@ class SecurityOrchestrator:
 
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
-        self.llm = create_llm("analysis")
+        # 오케스트레이터는 종합적인 분석과 의사결정을 담당
+        self.llm = create_security_llm(
+            task_type="comprehensive_analysis",
+            security_level="HIGH"
+        )
 
         # 전문 에이전트들 초기화
         self.security_agent = SecurityAnalysisAgent(verbose=verbose)
@@ -46,16 +50,24 @@ class SecurityOrchestrator:
 
         try:
             if self.verbose:
-                print("🚀 Starting comprehensive security workflow...")
+                print("\n" + "="*70)
+                print("🚀 STARTING COMPREHENSIVE SECURITY WORKFLOW")
+                print("="*70)
                 print(f"📁 Project: {project_path}")
                 print(f"📝 Query: {user_query}")
+                print(f"⏰ Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print("="*70 + "\n")
 
             # Phase 1: 보안 분석
-            print("\n" + "="*60)
+            print("\n" + "="*70)
             print("🔍 PHASE 1: SECURITY ANALYSIS")
-            print("="*60)
+            print("="*70)
+            print("📋 Step 1/3: Analyzing project for security vulnerabilities...")
+            print("   → This may take 30-60 seconds depending on project size")
 
+            phase1_start = time.time()
             security_analysis = await self.security_agent.analyze_project(project_path, user_query)
+            phase1_duration = time.time() - phase1_start
             self.performance_metrics["phases_completed"].append("security_analysis")
             self.performance_metrics["agents_used"].append("security_agent")
 
@@ -66,18 +78,23 @@ class SecurityOrchestrator:
                 )
 
             # 보안 분석 결과 요약 출력
+            print(f"\n✅ Phase 1 completed in {phase1_duration:.1f}s")
             if self.verbose:
                 print(self.security_agent.get_analysis_summary())
 
             # Phase 2: 수정 방안 생성
-            print("\n" + "="*60)
+            print("\n" + "="*70)
             print("🔧 PHASE 2: REMEDIATION PLANNING")
-            print("="*60)
+            print("="*70)
+            print("📋 Step 2/3: Generating remediation plans and fix codes...")
+            print("   → Creating PR templates and documentation")
 
+            phase2_start = time.time()
             project_info = security_analysis.get("detailed_results", {}).get("project_info", {})
             remediation_plan = await self.remediation_agent.generate_remediation_plan(
                 security_analysis, project_info
             )
+            phase2_duration = time.time() - phase2_start
             self.performance_metrics["phases_completed"].append("remediation_planning")
             self.performance_metrics["agents_used"].append("remediation_agent")
 
@@ -89,17 +106,22 @@ class SecurityOrchestrator:
                 )
 
             # 수정 방안 결과 요약 출력
+            print(f"\n✅ Phase 2 completed in {phase2_duration:.1f}s")
             if self.verbose:
                 print(self.remediation_agent.get_remediation_summary())
 
             # Phase 3: 최종 리포트 생성
-            print("\n" + "="*60)
+            print("\n" + "="*70)
             print("📊 PHASE 3: FINAL REPORT GENERATION")
-            print("="*60)
+            print("="*70)
+            print("📋 Step 3/3: Generating comprehensive security report...")
+            print("   → Calculating risk scores and ROI analysis")
 
+            phase3_start = time.time()
             final_report = await self._generate_final_report(
                 security_analysis, remediation_plan, project_path, user_query
             )
+            phase3_duration = time.time() - phase3_start
             self.performance_metrics["phases_completed"].append("final_report")
 
             # 워크플로우 완료
@@ -127,10 +149,19 @@ class SecurityOrchestrator:
 
             self.workflow_results = workflow_results
 
+            # 최종 완료 메시지
+            print(f"\n✅ Phase 3 completed in {phase3_duration:.1f}s")
+            print("\n" + "="*70)
+            print("✅ WORKFLOW COMPLETED SUCCESSFULLY")
+            print("="*70)
+            print(f"⏰ Total Duration: {self.performance_metrics['total_duration']:.1f}s")
+            print(f"📊 Phase Breakdown:")
+            print(f"   • Phase 1 (Security Analysis): {phase1_duration:.1f}s")
+            print(f"   • Phase 2 (Remediation Planning): {phase2_duration:.1f}s")
+            print(f"   • Phase 3 (Final Report): {phase3_duration:.1f}s")
+            print("="*70)
+
             if self.verbose:
-                print("\n" + "="*60)
-                print("✅ WORKFLOW COMPLETED SUCCESSFULLY")
-                print("="*60)
                 print(self._get_workflow_summary())
 
             return workflow_results

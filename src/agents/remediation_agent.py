@@ -6,20 +6,25 @@
 import asyncio
 import time
 from typing import Dict, List, Any, Optional
-from langchain.agents import create_structured_chat_agent, AgentExecutor
-from langchain.memory import ConversationBufferMemory
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-from ..models.llm_config import create_llm, PromptTemplates
+from ..models.llm_config import create_security_llm, SecurityModelSelector, PromptTemplates
 from ..tools.fix_tools import generate_fix_code, create_pr_template, generate_security_documentation, generate_fix_script
 from ..tools.analysis_tools import calculate_priority_score
+from ..tools.github_tools import create_github_pr, create_github_issue
 
 
 class RemediationAgent:
     """수정 방안 생성 전문 에이전트"""
 
     def __init__(self, verbose: bool = True):
-        self.llm = create_llm("creative")  # 수정 코드 생성에는 창의적 모델 사용
+        # 수정 방안 생성 - 제한적 창의성 허용하되 보안성 유지
+        self.llm = create_security_llm(
+            task_type="fix_code_generation",
+            security_level="MEDIUM"  # 창의성과 정확성의 균형
+        )
         self.verbose = verbose
 
         # 수정 도구들
@@ -28,15 +33,10 @@ class RemediationAgent:
             create_pr_template,
             generate_security_documentation,
             generate_fix_script,
-            calculate_priority_score
+            calculate_priority_score,
+            create_github_pr,
+            create_github_issue
         ]
-
-        # 메모리 설정
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            output_key="output"
-        )
 
         # 에이전트 초기화
         self.agent_executor = self._create_agent()
@@ -61,6 +61,7 @@ Your responsibilities:
 3. Develop security documentation and guidelines
 4. Provide automated fix scripts where possible
 5. Ensure all fixes follow security best practices
+6. Create GitHub Pull Requests and Issues when requested
 
 Remediation Workflow:
 1. Analyze each vulnerability type and context
@@ -70,6 +71,16 @@ Remediation Workflow:
 5. Create detailed PR templates with checklists
 6. Generate supporting documentation
 7. Provide implementation guidance and timelines
+8. If user provides a GitHub repository URL, offer to create an actual PR
+
+You have access to tools for:
+- generating fix code
+- creating PR templates
+- generating documentation
+- creating fix scripts
+- calculating priority scores
+- creating actual GitHub Pull Requests (requires GitHub CLI)
+- creating GitHub Issues for vulnerability tracking
 
 Code Quality Standards:
 - Follow secure coding principles (OWASP guidelines)
@@ -91,13 +102,13 @@ Be practical, secure, and focus on implementable solutions."""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
+            MessagesPlaceholder(variable_name="chat_history", optional=True),
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
 
-        # 에이전트 생성
-        agent = create_structured_chat_agent(
+        # LangChain 0.3.x의 새로운 Tool Calling Agent 생성
+        agent = create_tool_calling_agent(
             llm=self.llm,
             tools=self.remediation_tools,
             prompt=prompt
@@ -106,7 +117,6 @@ Be practical, secure, and focus on implementable solutions."""
         return AgentExecutor(
             agent=agent,
             tools=self.remediation_tools,
-            memory=self.memory,
             verbose=self.verbose,
             handle_parsing_errors=True,
             max_iterations=8,
@@ -163,7 +173,11 @@ Ensure all fixes follow security best practices and include proper validation.
 """
 
             if self.verbose:
-                print("🔧 Generating comprehensive remediation plan...")
+                print("\n🔧 Generating comprehensive remediation plan...")
+                print("   [1/4] Generating fix code for vulnerabilities...")
+                print("   [2/4] Creating GitHub PR template...")
+                print("   [3/4] Generating security documentation...")
+                print("   [4/4] Creating automated fix script...")
 
             result = await self._run_agent_async(remediation_prompt)
 
