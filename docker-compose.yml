@@ -1,6 +1,53 @@
 version: '3.8'
 
 services:
+  # Langfuse Self-Hosted Dashboard (V2 - PostgreSQL only)
+  langfuse-server:
+    image: langfuse/langfuse:2
+    container_name: langfuse-server
+    ports:
+      - "3001:3000"  # 3000 포트 충돌 방지 → 3001로 변경
+    environment:
+      # Database
+      DATABASE_URL: postgresql://postgres:postgres@langfuse-db:5432/langfuse
+
+      # Security
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-random-string-here}
+      SALT: ${LANGFUSE_SALT:-changeme-salt-string-here}
+
+      # Optional: Enable telemetry (set to false for privacy)
+      TELEMETRY_ENABLED: false
+
+      # Optional: Enable authentication
+      AUTH_DISABLE_SIGNUP: false
+
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # PostgreSQL Database for Langfuse
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: langfuse-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+      - ./langfuse-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"  # Avoid conflict with port 5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Security Agent Application
   security-agent:
     build:
       context: .
@@ -9,16 +56,34 @@ services:
     ports:
       - "8501:8501"  # Streamlit UI
     environment:
+      # OpenRouter API
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - MODEL_NAME=${MODEL_NAME:-openai/gpt-4-turbo-preview}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://openrouter.ai/api/v1}
+
+      # Dual Model Strategy
+      - MODEL_THINKING=${MODEL_THINKING:-qwen/qwen3-next-80b-a3b-thinking}
+      - MODEL_INSTRUCT=${MODEL_INSTRUCT:-qwen/qwen3-next-80b-a3b-instruct}
+      - MODEL_NAME=${MODEL_NAME:-qwen/qwen3-next-80b-a3b-instruct}
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-4096}
+
+      # GitHub
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO_URL=${GITHUB_REPO_URL}
+
+      # Langfuse Self-Hosted
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=http://langfuse-server:3000
+
     volumes:
       - ./logs:/app/logs
       - ./demo:/app/demo:ro
       - ./results:/app/results
     working_dir: /app
     command: streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port 8501
+    depends_on:
+      - langfuse-server
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
@@ -39,6 +104,8 @@ services:
 
 volumes:
   trivy-cache:
+    driver: local
+  langfuse_db_data:
     driver: local
 
 networks:

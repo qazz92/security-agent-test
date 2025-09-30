@@ -13,9 +13,9 @@ from pydantic import BaseModel, Field
 
 class GenerateFixCodeInput(BaseModel):
     """Input schema for generate_fix_code tool"""
-    vulnerability: Optional[Dict[str, Any]] = Field(
+    vulnerability: Optional[Any] = Field(
         default=None,
-        description="취약점 정보 (Optional - 제공되지 않으면 샘플 수정 코드 반환)"
+        description="취약점 정보 (딕셔너리, 문자열, 리스트 모두 가능 - 제공되지 않으면 샘플 수정 코드 반환)"
     )
 
 
@@ -26,18 +26,29 @@ class GenerateFixCodeTool(BaseTool):
     description: str = "취약점에 대한 수정 코드를 생성합니다. 취약점 정보를 제공하면 해당 취약점에 맞는 수정 코드를 생성하고, 제공하지 않으면 샘플 코드를 반환합니다."
     args_schema: type[BaseModel] = GenerateFixCodeInput
 
-    def _run(self, vulnerability: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    def _run(self, vulnerability: Optional[Any] = None) -> Dict[str, str]:
         """
         취약점에 대한 수정 코드를 생성합니다.
 
         Args:
-            vulnerability: 취약점 정보 (Optional - 제공되지 않으면 샘플 수정 코드 반환)
+            vulnerability: 취약점 정보 (딕셔너리, 문자열, 리스트 모두 가능)
 
         Returns:
             수정 코드 및 설명
         """
         try:
+            # 데이터 타입 정규화
             if vulnerability is None:
+                vulnerability = {}
+            elif isinstance(vulnerability, str):
+                # 문자열인 경우 (예: "CVE-2023-30861") 타입만 추출
+                vulnerability = {'type': vulnerability, 'file': 'unknown', 'code': ''}
+            elif isinstance(vulnerability, list):
+                # 리스트인 경우 첫 번째 항목 사용
+                vulnerability = vulnerability[0] if vulnerability else {}
+                if isinstance(vulnerability, str):
+                    vulnerability = {'type': vulnerability, 'file': 'unknown', 'code': ''}
+            elif not isinstance(vulnerability, dict):
                 vulnerability = {}
 
             vuln_type = vulnerability.get('type', 'UNKNOWN')
@@ -635,13 +646,13 @@ Please ensure you:
 
 class GenerateSecurityDocumentationInput(BaseModel):
     """Input schema for generate_security_documentation tool"""
-    vulnerabilities: Optional[List[Dict[str, Any]]] = Field(
+    vulnerabilities: Optional[Any] = Field(
         default=None,
-        description="취약점 목록 (Optional)"
+        description="취약점 목록 또는 요약 정보 (리스트, 딕셔너리, 문자열 모두 가능)"
     )
-    fixes: Optional[List[Dict[str, Any]]] = Field(
+    fixes: Optional[Any] = Field(
         default=None,
-        description="수정 사항 목록 (Optional)"
+        description="수정 사항 목록 또는 요약 정보 (리스트, 딕셔너리, 문자열 모두 가능)"
     )
 
 
@@ -652,22 +663,33 @@ class GenerateSecurityDocumentationTool(BaseTool):
     description: str = "보안 수정에 대한 문서를 생성합니다. 취약점과 수정사항을 바탕으로 보안 가이드라인, README 섹션 등의 문서를 생성합니다."
     args_schema: type[BaseModel] = GenerateSecurityDocumentationInput
 
-    def _run(self, vulnerabilities: Optional[List[Dict[str, Any]]] = None, fixes: Optional[List[Dict[str, Any]]] = None) -> Dict[str, str]:
+    def _run(self, vulnerabilities: Optional[Any] = None, fixes: Optional[Any] = None) -> Dict[str, str]:
         """
         보안 수정에 대한 문서를 생성합니다.
 
         Args:
-            vulnerabilities: 취약점 목록 (Optional)
-            fixes: 수정 사항 목록
+            vulnerabilities: 취약점 목록 또는 요약 정보 (Optional)
+            fixes: 수정 사항 목록 또는 요약 정보 (Optional)
 
         Returns:
             다양한 문서들 (README 업데이트, 보안 가이드 등)
         """
         try:
+            # 데이터 타입 정규화
             if not vulnerabilities:
                 vulnerabilities = []
+            elif isinstance(vulnerabilities, str):
+                # 문자열인 경우 빈 리스트로 처리 (문서는 일반적인 내용 생성)
+                vulnerabilities = []
+            elif not isinstance(vulnerabilities, list):
+                vulnerabilities = [vulnerabilities]
+
             if not fixes:
                 fixes = []
+            elif isinstance(fixes, str):
+                fixes = []
+            elif not isinstance(fixes, list):
+                fixes = [fixes]
 
             docs = {}
 
@@ -797,9 +819,9 @@ MAX_LOGIN_ATTEMPTS=5
 
 class GenerateFixScriptInput(BaseModel):
     """Input schema for generate_fix_script tool"""
-    vulnerabilities: Optional[List[Dict[str, Any]]] = Field(
+    vulnerabilities: Optional[Any] = Field(
         default=None,
-        description="취약점 목록 (Optional)"
+        description="취약점 목록 또는 요약 정보 (리스트, 딕셔너리, 문자열 모두 가능)"
     )
 
 
@@ -810,19 +832,25 @@ class GenerateFixScriptTool(BaseTool):
     description: str = "취약점 수정을 위한 자동화 스크립트를 생성합니다. 취약점 목록을 바탕으로 자동화된 수정 스크립트를 작성합니다."
     args_schema: type[BaseModel] = GenerateFixScriptInput
 
-    def _run(self, vulnerabilities: Optional[List[Dict[str, Any]]] = None) -> str:
+    def _run(self, vulnerabilities: Optional[Any] = None) -> str:
         """
         취약점 수정을 위한 자동화 스크립트를 생성합니다.
 
         Args:
-            vulnerabilities: 취약점 목록
+            vulnerabilities: 취약점 목록 또는 요약 정보
 
         Returns:
             수정 스크립트
         """
         try:
+            # 데이터 타입 정규화
             if not vulnerabilities:
                 vulnerabilities = []
+            elif isinstance(vulnerabilities, str):
+                # 문자열인 경우 일반적인 스크립트 생성
+                vulnerabilities = []
+            elif not isinstance(vulnerabilities, list):
+                vulnerabilities = [vulnerabilities]
 
             script_lines = [
                 "#!/bin/bash",
@@ -893,7 +921,30 @@ class GenerateFixScriptTool(BaseTool):
 
 
 # Tool instances for backward compatibility and easy import
-generate_fix_code = GenerateFixCodeTool()
-create_pr_template = CreatePRTemplateTool()
-generate_security_documentation = GenerateSecurityDocumentationTool()
-generate_fix_script = GenerateFixScriptTool()
+_generate_fix_code_tool = GenerateFixCodeTool()
+_create_pr_template_tool = CreatePRTemplateTool()
+_generate_security_documentation_tool = GenerateSecurityDocumentationTool()
+_generate_fix_script_tool = GenerateFixScriptTool()
+
+# CrewAI-compatible tool wrappers
+from crewai.tools import tool
+
+@tool("Generate Fix Code")
+def generate_fix_code(vulnerability: Optional[Any] = None) -> dict:
+    """취약점에 대한 수정 코드를 생성합니다. SQL Injection, XSS, Command Injection 등 각 취약점 타입에 맞는 안전한 코드 패턴과 테스트 코드를 제공합니다."""
+    return _generate_fix_code_tool._run(vulnerability=vulnerability)
+
+@tool("Create PR Template")
+def create_pr_template(vulnerabilities: Optional[Any] = None, project_info: Optional[Any] = None) -> str:
+    """GitHub Pull Request 템플릿을 생성합니다. 취약점 목록과 수정 사항을 바탕으로 상세한 보안 패치 PR 문서를 작성합니다."""
+    return _create_pr_template_tool._run(vulnerabilities=vulnerabilities, project_info=project_info)
+
+@tool("Generate Security Documentation")
+def generate_security_documentation(vulnerabilities: Optional[Any] = None, fixes: Optional[Any] = None) -> dict:
+    """보안 수정에 대한 문서를 생성합니다. SECURITY.md, README 보안 섹션, .env.example 등 프로젝트에 필요한 보안 문서를 작성합니다."""
+    return _generate_security_documentation_tool._run(vulnerabilities=vulnerabilities, fixes=fixes)
+
+@tool("Generate Fix Script")
+def generate_fix_script(vulnerabilities: Optional[Any] = None) -> str:
+    """취약점 수정을 위한 자동화 스크립트를 생성합니다. 환경 설정, 의존성 업데이트, 보안 검증 등을 자동으로 수행하는 Bash 스크립트를 작성합니다."""
+    return _generate_fix_script_tool._run(vulnerabilities=vulnerabilities)

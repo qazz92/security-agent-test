@@ -12,9 +12,9 @@ import json
 
 class PriorityScoreInput(BaseModel):
     """calculate_priority_score 도구의 입력 스키마"""
-    vulnerability: Optional[Dict[str, Any]] = Field(
+    vulnerability: Optional[Any] = Field(
         default={},
-        description="취약점 정보 딕셔너리"
+        description="취약점 정보 (딕셔너리, 문자열, 리스트 모두 가능)"
     )
 
 
@@ -25,10 +25,19 @@ class CalculatePriorityScoreTool(BaseTool):
     description: str = "취약점의 우선순위 점수를 계산합니다. CVSS 점수, 취약점 타입, 노출도 등을 고려합니다."
     args_schema: type[BaseModel] = PriorityScoreInput
 
-    def _run(self, vulnerability: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _run(self, vulnerability: Optional[Any] = None) -> Dict[str, Any]:
         """도구 실행 메서드"""
         try:
+            # 데이터 타입 정규화
             if vulnerability is None:
+                vulnerability = {}
+            elif isinstance(vulnerability, str):
+                vulnerability = {'type': vulnerability}
+            elif isinstance(vulnerability, list):
+                vulnerability = vulnerability[0] if vulnerability else {}
+                if isinstance(vulnerability, str):
+                    vulnerability = {'type': vulnerability}
+            elif not isinstance(vulnerability, dict):
                 vulnerability = {}
 
             # CVSS 기본 점수 매핑
@@ -155,9 +164,9 @@ class CalculatePriorityScoreTool(BaseTool):
 
 class AnalyzeVulnerabilitiesInput(BaseModel):
     """analyze_vulnerabilities 도구의 입력 스키마"""
-    vulnerabilities: Optional[List[Dict[str, Any]]] = Field(
+    vulnerabilities: Optional[Any] = Field(
         default=[],
-        description="취약점 목록"
+        description="취약점 목록 (리스트, 딕셔너리, 문자열 모두 가능)"
     )
 
 
@@ -168,11 +177,16 @@ class AnalyzeVulnerabilitiesTool(BaseTool):
     description: str = "취약점 목록을 종합적으로 분석하고 통계를 생성합니다."
     args_schema: type[BaseModel] = AnalyzeVulnerabilitiesInput
 
-    def _run(self, vulnerabilities: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def _run(self, vulnerabilities: Optional[Any] = None) -> Dict[str, Any]:
         """도구 실행 메서드"""
         try:
+            # 데이터 타입 정규화
             if not vulnerabilities:
                 vulnerabilities = []
+            elif isinstance(vulnerabilities, str):
+                vulnerabilities = []  # 문자열인 경우 빈 분석 반환
+            elif not isinstance(vulnerabilities, list):
+                vulnerabilities = [vulnerabilities]
 
             if not vulnerabilities:
                 return {
@@ -322,9 +336,9 @@ class AnalyzeVulnerabilitiesTool(BaseTool):
 
 class AnalyzeVulnerabilityTrendsInput(BaseModel):
     """analyze_vulnerability_trends 도구의 입력 스키마"""
-    vulnerabilities: Optional[List[Dict[str, Any]]] = Field(
+    vulnerabilities: Optional[Any] = Field(
         default=[],
-        description="취약점 목록"
+        description="취약점 목록 (리스트, 딕셔너리, 문자열 모두 가능)"
     )
     time_window_days: Optional[int] = Field(
         default=30,
@@ -339,11 +353,16 @@ class AnalyzeVulnerabilityTrendsTool(BaseTool):
     description: str = "취약점 트렌드를 분석하고 패턴을 식별합니다."
     args_schema: type[BaseModel] = AnalyzeVulnerabilityTrendsInput
 
-    def _run(self, vulnerabilities: Optional[List[Dict[str, Any]]] = None, time_window_days: Optional[int] = 30) -> Dict[str, Any]:
+    def _run(self, vulnerabilities: Optional[Any] = None, time_window_days: Optional[int] = 30) -> Dict[str, Any]:
         """도구 실행 메서드"""
         try:
+            # 데이터 타입 정규화
             if not vulnerabilities:
                 vulnerabilities = []
+            elif isinstance(vulnerabilities, str):
+                vulnerabilities = []
+            elif not isinstance(vulnerabilities, list):
+                vulnerabilities = [vulnerabilities]
 
             import time
             current_time = time.time()
@@ -379,9 +398,9 @@ class AnalyzeVulnerabilityTrendsTool(BaseTool):
 
 class GenerateSecurityMetricsInput(BaseModel):
     """generate_security_metrics 도구의 입력 스키마"""
-    vulnerabilities: Optional[List[Dict[str, Any]]] = Field(
+    vulnerabilities: Optional[Any] = Field(
         default=[],
-        description="취약점 목록"
+        description="취약점 목록 (리스트, 딕셔너리, 문자열 모두 가능)"
     )
     project_info: Optional[Dict[str, Any]] = Field(
         default={},
@@ -396,11 +415,16 @@ class GenerateSecurityMetricsTool(BaseTool):
     description: str = "보안 메트릭과 대시보드 데이터를 생성합니다."
     args_schema: type[BaseModel] = GenerateSecurityMetricsInput
 
-    def _run(self, vulnerabilities: Optional[List[Dict[str, Any]]] = None, project_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _run(self, vulnerabilities: Optional[Any] = None, project_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """도구 실행 메서드"""
         try:
+            # 데이터 타입 정규화
             if not vulnerabilities:
                 vulnerabilities = []
+            elif isinstance(vulnerabilities, str):
+                vulnerabilities = []
+            elif not isinstance(vulnerabilities, list):
+                vulnerabilities = [vulnerabilities]
             if not project_info:
                 project_info = {}
 
@@ -473,9 +497,9 @@ class GenerateSecurityMetricsTool(BaseTool):
 
 class GenerateComplianceReportInput(BaseModel):
     """generate_compliance_report 도구의 입력 스키마"""
-    vulnerabilities: Optional[List[Dict[str, Any]]] = Field(
+    vulnerabilities: Optional[Any] = Field(
         default=[],
-        description="취약점 목록"
+        description="취약점 목록 (리스트, 딕셔너리, 문자열 모두 가능)"
     )
     compliance_framework: Optional[str] = Field(
         default="OWASP",
@@ -490,11 +514,16 @@ class GenerateComplianceReportTool(BaseTool):
     description: str = "지정된 컴플라이언스 프레임워크에 대한 보고서를 생성합니다."
     args_schema: type[BaseModel] = GenerateComplianceReportInput
 
-    def _run(self, vulnerabilities: Optional[List[Dict[str, Any]]] = None, compliance_framework: Optional[str] = "OWASP") -> Dict[str, Any]:
+    def _run(self, vulnerabilities: Optional[Any] = None, compliance_framework: Optional[str] = "OWASP") -> Dict[str, Any]:
         """도구 실행 메서드"""
         try:
+            # 데이터 타입 정규화
             if not vulnerabilities:
                 vulnerabilities = []
+            elif isinstance(vulnerabilities, str):
+                vulnerabilities = []
+            elif not isinstance(vulnerabilities, list):
+                vulnerabilities = [vulnerabilities]
 
             framework = compliance_framework or "OWASP"
 
@@ -560,12 +589,40 @@ class GenerateComplianceReportTool(BaseTool):
             return {"error": f"Compliance report generation failed: {str(e)}"}
 
 
-# 도구 인스턴스 생성 (LangChain 0.3 스타일)
-calculate_priority_score = CalculatePriorityScoreTool()
-analyze_vulnerabilities = AnalyzeVulnerabilitiesTool()
-analyze_vulnerability_trends = AnalyzeVulnerabilityTrendsTool()
-generate_security_metrics = GenerateSecurityMetricsTool()
-generate_compliance_report = GenerateComplianceReportTool()
+# 도구 인스턴스 생성 (LangChain 0.3 스타일, backward compatibility)
+_calculate_priority_score_tool = CalculatePriorityScoreTool()
+_analyze_vulnerabilities_tool = AnalyzeVulnerabilitiesTool()
+_analyze_vulnerability_trends_tool = AnalyzeVulnerabilityTrendsTool()
+_generate_security_metrics_tool = GenerateSecurityMetricsTool()
+_generate_compliance_report_tool = GenerateComplianceReportTool()
+
+# CrewAI-compatible tool wrappers
+from crewai.tools import tool
+
+@tool("Calculate Priority Score")
+def calculate_priority_score(vulnerability: Optional[Any] = None) -> dict:
+    """취약점의 우선순위 점수를 계산합니다. CVSS 점수, 취약점 타입, 노출도, 비즈니스 영향도 등을 종합적으로 고려하여 수정 우선순위를 결정합니다."""
+    return _calculate_priority_score_tool._run(vulnerability=vulnerability)
+
+@tool("Analyze Vulnerabilities")
+def analyze_vulnerabilities(vulnerabilities: Optional[Any] = None) -> dict:
+    """취약점 목록을 종합적으로 분석합니다. 심각도별, 타입별, 파일별 분류와 통계를 생성하고 수정 권장사항을 제공합니다."""
+    return _analyze_vulnerabilities_tool._run(vulnerabilities=vulnerabilities)
+
+@tool("Analyze Vulnerability Trends")
+def analyze_vulnerability_trends(vulnerabilities: Optional[Any] = None, time_window_days: Optional[int] = 30) -> dict:
+    """취약점 트렌드를 분석합니다. 시간 경과에 따른 취약점 패턴과 증감 추이를 파악하여 보안 개선 방향을 제시합니다."""
+    return _analyze_vulnerability_trends_tool._run(vulnerabilities=vulnerabilities, time_window_days=time_window_days)
+
+@tool("Generate Security Metrics")
+def generate_security_metrics(vulnerabilities: Optional[Any] = None, project_info: Optional[Dict[str, Any]] = None) -> dict:
+    """보안 메트릭과 대시보드 데이터를 생성합니다. 보안 점수, 취약점 통계, 컴플라이언스 상태 등 종합적인 보안 지표를 제공합니다."""
+    return _generate_security_metrics_tool._run(vulnerabilities=vulnerabilities, project_info=project_info)
+
+@tool("Generate Compliance Report")
+def generate_compliance_report(vulnerabilities: Optional[Any] = None, compliance_framework: Optional[str] = "OWASP") -> dict:
+    """컴플라이언스 보고서를 생성합니다. OWASP, SOX, GDPR 등 지정된 프레임워크에 대한 준수 여부와 개선 사항을 제공합니다."""
+    return _generate_compliance_report_tool._run(vulnerabilities=vulnerabilities, compliance_framework=compliance_framework)
 
 # 도구 목록 export
 __all__ = [

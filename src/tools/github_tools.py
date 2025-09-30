@@ -465,6 +465,41 @@ class CreateGitHubIssueTool(BaseTool):
             }
 
 
-# Tool instances
-create_github_pr = CreateGitHubPRTool()
-create_github_issue = CreateGitHubIssueTool()
+# Tool instances for backward compatibility
+_create_github_pr_tool = CreateGitHubPRTool()
+_create_github_issue_tool = CreateGitHubIssueTool()
+
+# CrewAI-compatible tool wrappers
+from crewai.tools import tool
+
+@tool("Create GitHub PR")
+def create_github_pr(
+    repo_url: str,
+    pr_title: str,
+    pr_body: str,
+    branch_name: str = "security-fixes",
+    base_branch: str = "main"
+) -> dict:
+    """GitHub Repository에 Pull Request를 생성합니다. 보안 패치를 위한 브랜치 생성, 커밋, 푸시 및 PR 생성까지 자동으로 처리합니다. GitHub CLI 또는 GITHUB_TOKEN 환경 변수를 통해 인증합니다."""
+    return _create_github_pr_tool._run(
+        repo_url=repo_url,
+        pr_title=pr_title,
+        pr_body=pr_body,
+        branch_name=branch_name,
+        base_branch=base_branch
+    )
+
+@tool("Create GitHub Issue")
+def create_github_issue(
+    repo_url: str,
+    issue_title: str,
+    issue_body: str,
+    labels: Optional[List[str]] = None
+) -> dict:
+    """GitHub Repository에 Issue를 생성합니다. 보안 취약점 보고나 개선 제안 등을 이슈로 등록할 때 사용합니다. GitHub CLI를 통해 인증합니다."""
+    return _create_github_issue_tool._run(
+        repo_url=repo_url,
+        issue_title=issue_title,
+        issue_body=issue_body,
+        labels=labels
+    )

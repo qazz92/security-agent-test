@@ -25,6 +25,9 @@ RUN wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --
     && apt-get install -y trivy \
     && rm -rf /var/lib/apt/lists/*
 
+# Semgrep 설치 (SAST 코드 분석)
+RUN pip install --no-cache-dir semgrep
+
 # 작업 디렉토리 설정
 WORKDIR /app
 

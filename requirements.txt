@@ -10,3 +10,14 @@ requests>=2.31.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 plotly>=5.0.0
+jinja2>=3.1.0
+
+# CrewAI for multi-agent orchestration
+crewai>=0.60.0
+crewai-tools>=0.12.0
+
+# Langfuse for LLM observability and tracing
+langfuse>=2.40.0
+
+# Semgrep for SAST code analysis
+semgrep>=1.50.0

@@ -341,7 +341,10 @@ class SecurityAgentUI:
     def show_vulnerabilities_tab(self, results: Dict[str, Any]):
         """취약점 탭 표시"""
 
-        vulnerabilities = results.get("vulnerabilities", [])
+        # 올바른 경로로 vulnerabilities 추출
+        security_analysis = results.get("security_analysis", {})
+        vulnerabilities = security_analysis.get("vulnerabilities", [])
+
         if not vulnerabilities:
             st.info("✅ No vulnerabilities found!")
             return
@@ -688,6 +691,18 @@ class SecurityAgentUI:
         """설정 페이지"""
 
         st.header("⚙️ Settings")
+
+        # Orchestration Info
+        with st.expander("🤖 Orchestration Mode", expanded=True):
+            st.info(
+                "**CrewAI Multi-Agent Collaboration**\n\n"
+                "This system uses CrewAI for advanced multi-agent orchestration:\n\n"
+                "👥 **3 Specialized Agents**:\n"
+                "- 🔍 Security Analyst: Vulnerability scanning and analysis\n"
+                "- 🎯 Triage Specialist: Risk prioritization and assessment\n"
+                "- 🔧 Remediation Engineer: Fix generation and GitHub PR automation\n\n"
+                "✨ Agents collaborate automatically with context sharing and task delegation"
+            )
 
         # API 키 설정
         with st.expander("🔐 API Configuration"):

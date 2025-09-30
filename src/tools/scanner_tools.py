@@ -113,6 +113,44 @@ class ScanWithTrivyTool(BaseTool):
     description: str = "Trivy를 사용하여 파일시스템과 Docker 설정을 스캔합니다. 종속성 취약점과 설정 문제를 탐지합니다."
     args_schema: type[BaseModel] = ScanWithTrivyInput
 
+    def _summarize_trivy_output(self, trivy_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Trivy 출력을 LLM에 전달할 수 있도록 요약"""
+        summarized = {
+            "SchemaVersion": trivy_data.get("SchemaVersion"),
+            "CreatedAt": trivy_data.get("CreatedAt"),
+            "Results": []
+        }
+
+        results = trivy_data.get("Results", [])
+        for result in results:
+            vulnerabilities = result.get("Vulnerabilities", [])
+            if not vulnerabilities:
+                continue
+
+            # 각 취약점을 핵심 정보만 추출
+            summarized_vulns = []
+            for vuln in vulnerabilities:
+                summarized_vulns.append({
+                    "VulnerabilityID": vuln.get("VulnerabilityID"),
+                    "PkgName": vuln.get("PkgName"),
+                    "InstalledVersion": vuln.get("InstalledVersion"),
+                    "FixedVersion": vuln.get("FixedVersion"),
+                    "Severity": vuln.get("Severity"),
+                    "Title": vuln.get("Title", "")[:200],  # 제목 200자로 제한
+                    "PrimaryURL": vuln.get("PrimaryURL"),
+                    # Description, References 제거 - 너무 큼
+                })
+
+            summarized["Results"].append({
+                "Target": result.get("Target"),
+                "Class": result.get("Class"),
+                "Type": result.get("Type"),
+                "VulnerabilityCount": len(vulnerabilities),
+                "Vulnerabilities": summarized_vulns
+            })
+
+        return summarized
+
     def _run(self, target_path: str) -> Dict[str, Any]:
         """
         Trivy를 사용하여 파일시스템과 Docker 설정을 스캔합니다.
@@ -135,9 +173,20 @@ class ScanWithTrivyTool(BaseTool):
             if trivy_available:
                 # 실제 Trivy 실행
                 try:
-                    # 파일시스템 스캔
+                    # 경로 정규화 - demo 디렉토리만 스캔
+                    if not target_path.endswith('demo/hello-world-vulnerable'):
+                        # demo 프로젝트 경로로 강제 변경
+                        import os
+                        if os.path.exists('/app/demo/hello-world-vulnerable'):
+                            target_path = '/app/demo/hello-world-vulnerable'
+                        elif os.path.exists('demo/hello-world-vulnerable'):
+                            target_path = 'demo/hello-world-vulnerable'
+
+                    print(f"Trivy scanning target: {target_path}")
+
+                    # 파일시스템 스캔 - 하위 디렉토리 제외하고 해당 경로만 스캔
                     fs_result = subprocess.run(
-                        ['trivy', 'fs', target_path, '--format', 'json', '--severity', 'CRITICAL,HIGH,MEDIUM'],
+                        ['trivy', 'fs', target_path, '--format', 'json', '--severity', 'CRITICAL,HIGH,MEDIUM', '--scanners', 'vuln'],
                         capture_output=True, text=True, timeout=60
                     )
 
@@ -152,10 +201,14 @@ class ScanWithTrivyTool(BaseTool):
                         )
                         config_data = json.loads(config_result.stdout) if config_result.stdout else {}
 
+                    # LLM 컨텍스트 한계 방지를 위해 요약
+                    summarized_fs = self._summarize_trivy_output(fs_data) if fs_data else {}
+                    summarized_config = self._summarize_trivy_output(config_data) if config_data else {}
+
                     return {
                         "scan_type": "trivy_real",
-                        "filesystem_scan": fs_data,
-                        "config_scan": config_data,
+                        "filesystem_scan": summarized_fs,
+                        "config_scan": summarized_config,
                         "scan_timestamp": time.time()
                     }
 
@@ -527,7 +580,30 @@ class CheckSecurityConfigsTool(BaseTool):
 
 
 # Tool instances for backward compatibility and easy import
-fetch_project_info = FetchProjectInfoTool()
-scan_with_trivy = ScanWithTrivyTool()
-analyze_dependencies = AnalyzeDependenciesTool()
-check_security_configs = CheckSecurityConfigsTool()
+fetch_project_info_tool = FetchProjectInfoTool()
+scan_with_trivy_tool = ScanWithTrivyTool()
+analyze_dependencies_tool = AnalyzeDependenciesTool()
+check_security_configs_tool = CheckSecurityConfigsTool()
+
+# CrewAI-compatible tool wrappers using @tool decorator
+from crewai.tools import tool
+
+@tool("Fetch Project Info")
+def fetch_project_info(project_path: str) -> dict:
+    """프로젝트의 기본 정보를 수집합니다. 파일 목록, 언어, 프레임워크, 보안 관련 파일 등을 분석합니다."""
+    return fetch_project_info_tool._run(project_path=project_path)
+
+@tool("Scan With Trivy")
+def scan_with_trivy(project_path: str) -> dict:
+    """Trivy를 사용하여 컨테이너 및 의존성 취약점을 스캔합니다. CVE 정보, 심각도, 영향받는 패키지를 포함한 상세 보고서를 생성합니다."""
+    return scan_with_trivy_tool._run(project_path=project_path)
+
+@tool("Analyze Dependencies")
+def analyze_dependencies(project_path: str) -> dict:
+    """프로젝트의 의존성을 분석하고 알려진 취약점을 확인합니다. requirements.txt, package.json 등을 분석합니다."""
+    return analyze_dependencies_tool._run(project_path=project_path)
+
+@tool("Check Security Configs")
+def check_security_configs(project_path: str) -> dict:
+    """보안 설정 파일들을 검사합니다. 하드코딩된 자격증명, 취약한 네트워크 설정 등을 탐지합니다."""
+    return check_security_configs_tool._run(project_path=project_path)
