@@ -56,6 +56,42 @@ class GenerateFixCodeTool(BaseTool):
             original_code = vulnerability.get('code', '')
 
             fix_templates = {
+                "SQL Injection": {
+                    "description": "Parameterized queries를 사용하여 SQL Injection을 방지합니다.",
+                    "before_code": original_code,
+                    "after_code": """
+# 안전한 방법: Parameterized queries 사용
+cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+
+# 또는 SQLAlchemy ORM 사용
+user = User.query.filter(User.id == user_id).first()
+
+# 입력 검증 추가
+def validate_user_id(user_id):
+    try:
+        return int(user_id)
+    except ValueError:
+        raise ValueError("Invalid user ID")
+
+# 사용 예시
+try:
+    validated_id = validate_user_id(user_id)
+    cursor.execute("SELECT * FROM users WHERE id = ?", (validated_id,))
+except ValueError as e:
+    return "Invalid input", 400
+""",
+                    "dependencies": ["sqlite3", "sqlalchemy"],
+                    "test_code": """
+def test_sql_injection_prevention():
+    # 악의적인 입력 테스트
+    malicious_input = "1; DROP TABLE users; --"
+    try:
+        result = get_user_safe(malicious_input)
+        assert result is None  # 안전하게 처리됨
+    except ValueError:
+        pass  # 예상된 동작
+"""
+                },
                 "SQL_INJECTION": {
                     "description": "Parameterized queries를 사용하여 SQL Injection을 방지합니다.",
                     "before_code": original_code,

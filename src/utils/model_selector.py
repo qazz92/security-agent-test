@@ -35,17 +35,17 @@ class ModelConfig:
 
     # Thinking Model (복잡한 추론)
     THINKING = {
-        "model": os.getenv('MODEL_THINKING', 'openrouter/qwen/qwen3-next-80b-a3b-thinking'),
+        "model": os.getenv('MODEL_THINKING', 'qwen/qwen3-next-80b-a3b-thinking'),
         "temperature": 0.2,  # 더 보수적
-        "max_tokens": 8192,  # 긴 추론 가능
+        "max_tokens": 16384,  # 긴 추론 가능 (배치 처리 고려)
         "description": "Complex reasoning and analysis"
     }
 
     # Instruct Model (단순 실행)
     INSTRUCT = {
-        "model": os.getenv('MODEL_INSTRUCT', 'openrouter/qwen/qwen3-next-80b-a3b-instruct'),
+        "model": os.getenv('MODEL_INSTRUCT', 'qwen/qwen3-next-80b-a3b-instruct'),
         "temperature": 0.1,  # 결정적
-        "max_tokens": 4096,  # 충분한 크기
+        "max_tokens": 8192,  # 배치 처리를 위한 충분한 크기 (Qwen3-Next: 256K context window)
         "description": "Tool calling and simple tasks"
     }
 
@@ -109,8 +109,11 @@ class ModelSelector:
         config = ModelConfig.THINKING if model_type == "thinking" else ModelConfig.INSTRUCT
 
         # 파라미터 설정
+        # LiteLLM requires 'openrouter/' prefix for provider detection
+        model_name = f"openrouter/{config['model']}"
+
         params = {
-            "model": config["model"],
+            "model": model_name,
             "temperature": config["temperature"],
             "max_tokens": config["max_tokens"],
             "openai_api_key": self.api_key,
@@ -136,8 +139,17 @@ class ModelSelector:
             f"🤖 Selected {model_type.upper()} model for {task_complexity.value}: "
             f"{config['model']} (temp={config['temperature']})"
         )
+        logger.info(f"   📞 Callbacks: {len(callbacks or [])} configured")
 
-        return ChatOpenAI(**params)
+        llm = ChatOpenAI(**params)
+
+        # Verify callbacks are set
+        if hasattr(llm, 'callbacks') and llm.callbacks:
+            logger.info(f"   ✅ LLM callbacks verified: {len(llm.callbacks)} callbacks")
+        elif callbacks:
+            logger.warning(f"   ⚠️ Callbacks provided but not set on LLM!")
+
+        return llm
 
     def get_model_for_agent(self, agent_name: str, callbacks: list = None) -> ChatOpenAI:
         """

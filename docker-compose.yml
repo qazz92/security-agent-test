@@ -37,7 +37,6 @@ services:
       POSTGRES_DB: langfuse
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
-      - ./langfuse-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5433:5432"  # Avoid conflict with port 5432
     healthcheck:
@@ -46,6 +45,60 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  # Langfuse Demo Data Initializer (runs once after server is ready)
+  langfuse-init:
+    image: postgres:15-alpine
+    container_name: langfuse-init
+    volumes:
+      - ./langfuse-init.sql:/langfuse-init.sql:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "⏳ Waiting for Langfuse server to complete migrations..."
+        max_attempts=60
+        attempt=0
+
+        while [ $$attempt -lt $$max_attempts ]; do
+          if PGPASSWORD=postgres psql -h langfuse-db -U postgres -d langfuse -c "SELECT 1 FROM users LIMIT 1" >/dev/null 2>&1; then
+            echo "✅ Langfuse schema is ready!"
+            break
+          fi
+
+          attempt=$$((attempt + 1))
+          if [ $$attempt -eq 1 ]; then
+            echo "   Checking schema (attempt $$attempt/$$max_attempts)..."
+          fi
+          sleep 2
+        done
+
+        if [ $$attempt -eq $$max_attempts ]; then
+          echo "❌ Timeout waiting for Langfuse schema"
+          exit 1
+        fi
+
+        echo ""
+        echo "🚀 Running Langfuse demo setup..."
+        PGPASSWORD=postgres psql -h langfuse-db -U postgres -d langfuse -f /langfuse-init.sql
+
+        echo ""
+        echo "=============================================="
+        echo "✅ Langfuse Demo Setup Complete!"
+        echo "=============================================="
+        echo "Web UI: http://localhost:3001"
+        echo ""
+        echo "Demo Account:"
+        echo "  Email: demo@example.com"
+        echo "  Password: demo1234"
+        echo ""
+        echo "API Keys (already configured in .env):"
+        echo "  Public: pk-lf-4c97a46c-5cae-4368-b5d1-44939ea97e43"
+        echo "  Secret: sk-lf-4e9dcf62-9cf7-4233-bb5c-d3c3d910fa16"
+        echo "=============================================="
+    depends_on:
+      langfuse-server:
+        condition: service_started
+    restart: "no"
 
   # Security Agent Application
   security-agent:
@@ -76,10 +129,22 @@ services:
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_HOST=http://langfuse-server:3000
 
+      # Development mode
+      - PYTHONUNBUFFERED=1
+
     volumes:
+      # Development: Mount source code for hot reload
+      - ./src:/app/src
+      - ./streamlit_app.py:/app/streamlit_app.py
+      - ./main.py:/app/main.py
+      - ./pytest.ini:/app/pytest.ini
+      - ./.env:/app/.env
+
+      # Data directories
       - ./logs:/app/logs
       - ./demo:/app/demo:ro
       - ./results:/app/results
+
     working_dir: /app
     command: streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port 8501
     depends_on:

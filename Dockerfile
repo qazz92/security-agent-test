@@ -1,5 +1,5 @@
 # SecurityAgent Portfolio - Production Dockerfile
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 # 메타데이터
 LABEL maintainer="SecurityAgent Portfolio" \
@@ -25,8 +25,8 @@ RUN wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --
     && apt-get install -y trivy \
     && rm -rf /var/lib/apt/lists/*
 
-# Semgrep 설치 (SAST 코드 분석)
-RUN pip install --no-cache-dir semgrep
+# uv 설치 (빠른 패키지 관리)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # 작업 디렉토리 설정
 WORKDIR /app
@@ -34,9 +34,9 @@ WORKDIR /app
 # Python 의존성 파일 복사
 COPY requirements.txt .
 
-# Python 패키지 설치
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# Python 패키지 설치 (uv 사용)
+RUN uv pip install --system --no-cache semgrep \
+    && uv pip install --system --no-cache -r requirements.txt
 
 # 애플리케이션 코드 복사
 COPY src/ ./src/

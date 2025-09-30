@@ -16,8 +16,8 @@ jinja2>=3.1.0
 crewai>=0.60.0
 crewai-tools>=0.12.0
 
-# Langfuse for LLM observability and tracing
-langfuse>=2.40.0
+# Langfuse for LLM observability and tracing (V2 compatible)
+langfuse>=2.40.0,<3.0.0
 
 # Semgrep for SAST code analysis
 semgrep>=1.50.0

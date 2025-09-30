@@ -9,10 +9,13 @@ import subprocess
 import time
 import re
 import yaml
+import logging
 from typing import Dict, List, Any, Optional
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class FetchProjectInfoInput(BaseModel):
@@ -591,19 +594,33 @@ from crewai.tools import tool
 @tool("Fetch Project Info")
 def fetch_project_info(project_path: str) -> dict:
     """프로젝트의 기본 정보를 수집합니다. 파일 목록, 언어, 프레임워크, 보안 관련 파일 등을 분석합니다."""
-    return fetch_project_info_tool._run(project_path=project_path)
+    logger.info(f"🔧 [TOOL CALL] Fetch Project Info - Path: {project_path}")
+    result = fetch_project_info_tool._run(project_path=project_path)
+    logger.info(f"✅ [TOOL DONE] Fetch Project Info - Files: {len(result.get('files', []))}")
+    return result
 
 @tool("Scan With Trivy")
 def scan_with_trivy(project_path: str) -> dict:
     """Trivy를 사용하여 컨테이너 및 의존성 취약점을 스캔합니다. CVE 정보, 심각도, 영향받는 패키지를 포함한 상세 보고서를 생성합니다."""
-    return scan_with_trivy_tool._run(project_path=project_path)
+    logger.info(f"🔧 [TOOL CALL] Scan With Trivy - Path: {project_path}")
+    result = scan_with_trivy_tool._run(project_path=project_path)
+    if result.get('success'):
+        summary = result.get('summary', {})
+        logger.info(f"✅ [TOOL DONE] Trivy - Vulnerabilities: {summary.get('total_vulnerabilities', 0)}")
+    return result
 
 @tool("Analyze Dependencies")
 def analyze_dependencies(project_path: str) -> dict:
     """프로젝트의 의존성을 분석하고 알려진 취약점을 확인합니다. requirements.txt, package.json 등을 분석합니다."""
-    return analyze_dependencies_tool._run(project_path=project_path)
+    logger.info(f"🔧 [TOOL CALL] Analyze Dependencies - Path: {project_path}")
+    result = analyze_dependencies_tool._run(project_path=project_path)
+    logger.info(f"✅ [TOOL DONE] Analyze Dependencies - Vulnerable packages: {len(result.get('vulnerabilities', []))}")
+    return result
 
 @tool("Check Security Configs")
 def check_security_configs(project_path: str) -> dict:
     """보안 설정 파일들을 검사합니다. 하드코딩된 자격증명, 취약한 네트워크 설정 등을 탐지합니다."""
-    return check_security_configs_tool._run(project_path=project_path)
+    logger.info(f"🔧 [TOOL CALL] Check Security Configs - Path: {project_path}")
+    result = check_security_configs_tool._run(project_path=project_path)
+    logger.info(f"✅ [TOOL DONE] Check Security Configs - Issues: {len(result.get('issues', []))}")
+    return result

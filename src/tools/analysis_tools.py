@@ -14,112 +14,48 @@ class PriorityScoreInput(BaseModel):
     """calculate_priority_score 도구의 입력 스키마"""
     vulnerability: Optional[Any] = Field(
         default={},
-        description="취약점 정보 (딕셔너리, 문자열, 리스트 모두 가능)"
+        description="취약점 정보 (딕셔너리, 문자열, 리스트 모두 가능). 리스트를 전달하면 배치 처리하여 모든 항목의 우선순위를 한 번에 계산합니다."
     )
 
 
 class CalculatePriorityScoreTool(BaseTool):
-    """취약점의 우선순위 점수를 계산하는 도구"""
+    """취약점의 우선순위 점수를 계산하는 도구 (배치 처리 지원)"""
 
     name: str = "calculate_priority_score"
-    description: str = "취약점의 우선순위 점수를 계산합니다. CVSS 점수, 취약점 타입, 노출도 등을 고려합니다."
+    description: str = "취약점의 우선순위 점수를 계산합니다. CVSS 점수, 취약점 타입, 노출도 등을 고려합니다. 여러 취약점을 리스트로 전달하면 한 번에 배치 처리합니다 (최대 50개)."
     args_schema: type[BaseModel] = PriorityScoreInput
 
     def _run(self, vulnerability: Optional[Any] = None) -> Dict[str, Any]:
-        """도구 실행 메서드"""
+        """도구 실행 메서드 (배치 처리 지원)"""
         try:
-            # 데이터 타입 정규화
-            if vulnerability is None:
-                vulnerability = {}
-            elif isinstance(vulnerability, str):
-                vulnerability = {'type': vulnerability}
-            elif isinstance(vulnerability, list):
-                vulnerability = vulnerability[0] if vulnerability else {}
-                if isinstance(vulnerability, str):
-                    vulnerability = {'type': vulnerability}
-            elif not isinstance(vulnerability, dict):
-                vulnerability = {}
+            # 배치 처리: 리스트가 들어오면 모든 항목 처리
+            if isinstance(vulnerability, list) and len(vulnerability) > 0:
+                # Qwen3-Next context window는 256K tokens, 배치 크기 50개 제한
+                batch_size = 50
+                vulnerabilities_to_process = vulnerability[:batch_size]
 
-            # CVSS 기본 점수 매핑
-            cvss_scores = {
-                "CRITICAL": 9.0,
-                "HIGH": 7.0,
-                "MEDIUM": 4.0,
-                "LOW": 2.0,
-                "UNKNOWN": 1.0
-            }
+                results = []
+                for vuln in vulnerabilities_to_process:
+                    # 각 항목을 개별 처리
+                    result = self._calculate_single_priority(vuln)
+                    results.append(result)
 
-            severity = vulnerability.get('severity', 'MEDIUM')
-            base_score = cvss_scores.get(severity, 4.0)
-
-            # 취약점 타입별 가중치
-            type_weights = {
-                "SQL_INJECTION": 1.0,
-                "COMMAND_INJECTION": 1.0,
-                "UNSAFE_DESERIALIZATION": 0.9,
-                "XSS": 0.8,
-                "HARDCODED_SECRET": 0.7,
-                "HARDCODED_CREDENTIALS": 0.7,
-                "DEBUG_MODE": 0.5,
-                "INSECURE_NETWORK": 0.6
-            }
-
-            vuln_type = vulnerability.get('type', 'UNKNOWN')
-            type_weight = type_weights.get(vuln_type, 0.5)
-
-            # 노출도 계산
-            is_public_facing = vulnerability.get('public_facing', False)
-            exposure_score = 1.2 if is_public_facing else 1.0
-
-            # 데이터 민감도
-            handles_pii = vulnerability.get('handles_pii', False)
-            data_sensitivity = 1.3 if handles_pii else 1.0
-
-            # 최종 점수 계산
-            priority_score = base_score * type_weight * exposure_score * data_sensitivity
-
-            # 수정 난이도 평가
-            fix_complexity = vulnerability.get('fix_complexity', 'MEDIUM')
-            complexity_scores = {
-                "TRIVIAL": 10,
-                "LOW": 8,
-                "MEDIUM": 5,
-                "HIGH": 3,
-                "COMPLEX": 1
-            }
-            complexity_score = complexity_scores.get(fix_complexity, 5)
-
-            # 비즈니스 영향도
-            business_impact = vulnerability.get('business_impact', 'MEDIUM')
-            impact_multipliers = {
-                "CRITICAL": 2.0,
-                "HIGH": 1.5,
-                "MEDIUM": 1.0,
-                "LOW": 0.5
-            }
-            impact_multiplier = impact_multipliers.get(business_impact, 1.0)
-
-            # 최종 우선순위 점수
-            final_priority = priority_score * impact_multiplier + (complexity_score / 10)
-
-            return {
-                "priority_score": round(final_priority, 2),
-                "severity": severity,
-                "type": vuln_type,
-                "fix_complexity": fix_complexity,
-                "business_impact": business_impact,
-                "components": {
-                    "base_score": base_score,
-                    "type_weight": type_weight,
-                    "exposure_score": exposure_score,
-                    "data_sensitivity": data_sensitivity,
-                    "complexity_score": complexity_score,
-                    "impact_multiplier": impact_multiplier
-                },
-                "recommendation": self._get_recommendation(final_priority),
-                "estimated_fix_time": self._estimate_fix_time(fix_complexity),
-                "risk_level": self._get_risk_level(final_priority)
-            }
+                # 배치 결과 요약
+                return {
+                    "batch_mode": True,
+                    "total_processed": len(results),
+                    "results": results,
+                    "summary": {
+                        "critical": len([r for r in results if r.get("risk_level") == "CRITICAL"]),
+                        "high": len([r for r in results if r.get("risk_level") == "HIGH"]),
+                        "medium": len([r for r in results if r.get("risk_level") == "MEDIUM"]),
+                        "low": len([r for r in results if r.get("risk_level") == "LOW"])
+                    },
+                    "top_5_priorities": sorted(results, key=lambda x: x.get("priority_score", 0), reverse=True)[:5]
+                }
+            else:
+                # 단일 항목 처리
+                return self._calculate_single_priority(vulnerability)
 
         except Exception as e:
             return {
@@ -127,6 +63,104 @@ class CalculatePriorityScoreTool(BaseTool):
                 "priority_score": 0,
                 "recommendation": "Manual review required"
             }
+
+    def _calculate_single_priority(self, vulnerability: Optional[Any] = None) -> Dict[str, Any]:
+        """단일 취약점의 우선순위 계산"""
+        # 데이터 타입 정규화
+        if vulnerability is None:
+            vulnerability = {}
+        elif isinstance(vulnerability, str):
+            vulnerability = {'type': vulnerability}
+        elif isinstance(vulnerability, list):
+            vulnerability = vulnerability[0] if vulnerability else {}
+            if isinstance(vulnerability, str):
+                vulnerability = {'type': vulnerability}
+        elif not isinstance(vulnerability, dict):
+            vulnerability = {}
+
+        # CVSS 기본 점수 매핑
+        cvss_scores = {
+            "CRITICAL": 9.0,
+            "HIGH": 7.0,
+            "MEDIUM": 4.0,
+            "LOW": 2.0,
+            "UNKNOWN": 1.0
+        }
+
+        severity = vulnerability.get('severity', 'MEDIUM')
+        base_score = cvss_scores.get(severity, 4.0)
+
+        # 취약점 타입별 가중치
+        type_weights = {
+            "SQL_INJECTION": 1.0,
+            "COMMAND_INJECTION": 1.0,
+            "UNSAFE_DESERIALIZATION": 0.9,
+            "XSS": 0.8,
+            "HARDCODED_SECRET": 0.7,
+            "HARDCODED_CREDENTIALS": 0.7,
+            "DEBUG_MODE": 0.5,
+            "INSECURE_NETWORK": 0.6,
+            "code": 1.0,  # 코드 레벨 취약점 높은 가중치
+            "dependency": 0.7  # 의존성 취약점 낮은 가중치
+        }
+
+        vuln_type = vulnerability.get('type', 'UNKNOWN')
+        type_weight = type_weights.get(vuln_type, 0.5)
+
+        # 노출도 계산
+        is_public_facing = vulnerability.get('public_facing', False)
+        exposure_score = 1.2 if is_public_facing else 1.0
+
+        # 데이터 민감도
+        handles_pii = vulnerability.get('handles_pii', False)
+        data_sensitivity = 1.3 if handles_pii else 1.0
+
+        # 최종 점수 계산
+        priority_score = base_score * type_weight * exposure_score * data_sensitivity
+
+        # 수정 난이도 평가
+        fix_complexity = vulnerability.get('fix_complexity', 'MEDIUM')
+        complexity_scores = {
+            "TRIVIAL": 10,
+            "LOW": 8,
+            "MEDIUM": 5,
+            "HIGH": 3,
+            "COMPLEX": 1
+        }
+        complexity_score = complexity_scores.get(fix_complexity, 5)
+
+        # 비즈니스 영향도
+        business_impact = vulnerability.get('business_impact', 'MEDIUM')
+        impact_multipliers = {
+            "CRITICAL": 2.0,
+            "HIGH": 1.5,
+            "MEDIUM": 1.0,
+            "LOW": 0.5
+        }
+        impact_multiplier = impact_multipliers.get(business_impact, 1.0)
+
+        # 최종 우선순위 점수
+        final_priority = priority_score * impact_multiplier + (complexity_score / 10)
+
+        return {
+            "priority_score": round(final_priority, 2),
+            "severity": severity,
+            "type": vuln_type,
+            "fix_complexity": fix_complexity,
+            "business_impact": business_impact,
+            "components": {
+                "base_score": base_score,
+                "type_weight": type_weight,
+                "exposure_score": exposure_score,
+                "data_sensitivity": data_sensitivity,
+                "complexity_score": complexity_score,
+                "impact_multiplier": impact_multiplier
+            },
+            "recommendation": self._get_recommendation(final_priority),
+            "estimated_fix_time": self._estimate_fix_time(fix_complexity),
+            "risk_level": self._get_risk_level(final_priority),
+            "vulnerability_id": vulnerability.get('cve_id') or vulnerability.get('description', 'N/A')
+        }
 
     def _get_recommendation(self, score: float) -> str:
         """우선순위 점수에 따른 권장사항"""

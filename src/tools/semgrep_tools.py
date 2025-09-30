@@ -262,9 +262,17 @@ from crewai.tools import tool
 @tool("Scan With Semgrep")
 def scan_with_semgrep(project_path: str, config: str = "auto") -> dict:
     """Semgrep을 사용하여 SAST 코드 분석을 수행합니다. SQL Injection, XSS, Command Injection 등의 코드 레벨 취약점을 탐지합니다."""
-    return _semgrep_scan_tool._run(project_path=project_path, config=config)
+    logger.info(f"🔧 [TOOL CALL] Scan With Semgrep - Path: {project_path}, Config: {config}")
+    result = _semgrep_scan_tool._run(project_path=project_path, config=config)
+    if result.get('success'):
+        summary = result.get('summary', {})
+        logger.info(f"✅ [TOOL DONE] Semgrep - Findings: {summary.get('total_findings', 0)}")
+    return result
 
 @tool("List Semgrep Configs")
 def list_semgrep_configs() -> dict:
     """Semgrep에서 사용 가능한 설정 목록을 반환합니다. 다양한 보안 룰셋과 프레임워크별 설정을 확인할 수 있습니다."""
-    return _semgrep_config_tool._run()
+    logger.info(f"🔧 [TOOL CALL] List Semgrep Configs")
+    result = _semgrep_config_tool._run()
+    logger.info(f"✅ [TOOL DONE] List Semgrep Configs")
+    return result
