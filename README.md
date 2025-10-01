@@ -383,9 +383,10 @@ GITHUB_TOKEN=ghp_...              # GitHub Personal Access Token (PR 자동화)
 MODEL_THINKING=qwen/qwen3-next-80b-a3b-thinking
 MODEL_INSTRUCT=qwen/qwen3-next-80b-a3b-instruct
 
-# Langfuse (자동 설정됨)
-LANGFUSE_PUBLIC_KEY=pk-lf-demo-portfolio-public-key-1234567890
-LANGFUSE_SECRET_KEY=sk-lf-demo-portfolio-secret-key-1234567890abcdef
+# Langfuse (LLM Observability & Tracing)
+# Demo API Keys - 포트폴리오 시연용으로 안전하게 사용 가능
+LANGFUSE_PUBLIC_KEY=pk-lf-4c97a46c-5cae-4368-b5d1-44939ea97e43
+LANGFUSE_SECRET_KEY=sk-lf-4e9dcf62-9cf7-4233-bb5c-d3c3d910fa16
 LANGFUSE_HOST=http://localhost:3001
 ```
 
@@ -418,23 +419,44 @@ security-agent-portfolio/
 │   │   └── orchestrator_agent.py     # 전체 워크플로우 조율
 │   ├── tools/
 │   │   ├── scanner_tools.py          # Trivy 스캔 도구
-│   │   ├── semgrep_tools.py          # Semgrep SAST (LLM 기반 분류)
+│   │   ├── semgrep_tools.py          # Semgrep SAST
 │   │   ├── analysis_tools.py         # 우선순위 계산
 │   │   ├── fix_tools_v2.py           # 수정 코드 생성 (LLM 기반)
-│   │   └── github_tools.py           # PR 템플릿 생성
+│   │   └── github_tools.py           # PR 자동화
 │   ├── prompts/
+│   │   ├── README.md                 # 프롬프트 관리 가이드
 │   │   └── crew_agents/              # 에이전트별 프롬프트
+│   │       ├── security_analyst.md
+│   │       ├── semgrep_specialist.md
+│   │       ├── triage_specialist.md
+│   │       └── remediation_engineer.md
 │   ├── utils/
 │   │   ├── model_selector.py         # Dual Model Strategy
-│   │   └── prompt_manager.py         # 프롬프트 로딩
+│   │   ├── prompt_manager.py         # 프롬프트 로딩 유틸
+│   │   ├── logger.py                 # 보안 이벤트 로깅
+│   │   └── performance.py            # 성능 트레이싱
 │   └── models/
-│       └── llm_config.py             # LLM 설정
+│       └── llm_config.py             # LLM 설정 관리
 ├── demo/
 │   └── hello-world-vulnerable/       # 취약점 테스트용 Flask 앱
+│       ├── app.py
+│       └── README.md
+├── tests/
+│   ├── test_tools.py                 # Tool 단위 테스트
+│   ├── test_agents.py                # Agent 통합 테스트
+│   ├── test_fix_tools_v2.py          # Fix 도구 테스트
+│   └── conftest.py                   # Pytest 설정
 ├── results/                          # 스캔 결과 및 PR 템플릿
-├── docker-compose.yml
-├── streamlit_app.py
-└── requirements.txt
+├── logs/                             # 보안 이벤트 로그
+├── docker-compose.yml                # 서비스 오케스트레이션
+├── Dockerfile                        # Security Agent 컨테이너
+├── streamlit_app.py                  # Web UI
+├── main.py                           # CLI 엔트리포인트
+├── requirements.txt                  # Python 의존성
+├── .env.example                      # 환경변수 템플릿
+├── README.md                         # 프로젝트 개요
+├── PORTFOLIO.md                      # 상세 기술 문서
+└── MOTIVATION.md                     # 지원 동기
 ```
 
 ---

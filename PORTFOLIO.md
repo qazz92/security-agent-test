@@ -460,67 +460,83 @@ Total: $1,200 (20% 절감)
 
 ## 🔧 핵심 기술 구현
 
-### 1. LLM 기반 취약점 분류 (하드코딩 제거)
+### 1. 워크플로우 제어 방식의 차이
 
-**회사 프로젝트 방식**:
+**실무 방식**: Node.js 코드가 전체 워크플로우 제어
 ```javascript
-// Node.js: SARIF 파싱 후 하드코딩 분류 (의사코드 - 흐름 설명용)
-function classifyFromSARIF(sarifResult) {
-  const ruleId = sarifResult.ruleId;
+// Node.js Lambda가 각 단계를 순차 실행 (의사코드)
+async function runSecurityPipeline() {
+  // 1. SARIF 파싱 (Node.js가 제어)
+  const sarif = JSON.parse(fs.readFileSync('trivy-results.sarif'));
 
-  // 300+ 줄의 if/elif 체인
-  if (ruleId.includes('sql') || ruleId.includes('injection')) {
-    return 'SQL_INJECTION';
-  } else if (ruleId.includes('xss') || ruleId.includes('cross-site')) {
-    return 'XSS';
-  }
-  // ... 50+ 취약점 타입별 하드코딩
+  // 2. LLM 검증 (AWS Bedrock 호출 - 온도 교차 검증)
+  const verified = await bedrockRuntime.invokeModel({
+    modelId: 'anthropic.claude-sonnet-4',
+    body: JSON.stringify({
+      prompt: `Verify SARIF vulnerabilities: ${JSON.stringify(sarif)}`,
+      temperature: 0.2
+    })
+  });
+
+  // 3. LLM 우선순위화 (Node.js가 결과 받아서 다음 단계로 전달)
+  const prioritized = await bedrockRuntime.invokeModel({
+    prompt: `Prioritize: ${verified}`,
+    temperature: 0.3
+  });
+
+  // 4. Security Hub 전송 (Node.js가 최종 처리)
+  await securityHub.batchImportFindings({Findings: prioritized});
 }
-
-// LLM(AWS Bedrock Claude Sonnet 4)은 검증과 우선순위화만 담당
-const verified = await validateWithBedrock(classifications);
+// 문제: 모든 단계를 Node.js가 제어, LLM은 검증/우선순위화만 담당
 ```
 
-**본 포트폴리오 방식 (LLM 기반 분류)**:
+**포트폴리오 방식**: CrewAI Agent가 워크플로우 주도
 ```python
-# src/tools/semgrep_tools.py:183
-def _extract_category(self, rule_id: str, message: str):
-    """LLM 기반 취약점 분류"""
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a security vulnerability classifier.
+# LLM Agent가 자율적으로 도구 선택하고 실행
+crew = Crew(
+    agents=[analyst, semgrep, triage, remediation],
+    tasks=[task1, task2, task3, task4],
+    process=Process.SEQUENTIAL  # Agent가 컨텍스트 자동 전달
+)
 
-        Classify into EXACT types:
-        - SQL_INJECTION
-        - XSS
-        - COMMAND_INJECTION
-        ... (14 types)
-
-        Return ONLY the type, no explanations."""),
-        ("user", "Rule ID: {rule_id}\nMessage: {message}")
-    ])
-
-    llm = self._get_llm()  # Lazy initialization
-    response = llm.invoke(prompt.format_messages(
-        rule_id=rule_id,
-        message=message[:200]
-    ))
-
-    vuln_type = response.content.strip().upper()
-
-    # Validation
-    if vuln_type not in VALID_TYPES:
-        return "OTHER"
-
-    return vuln_type
+# Agent가 상황에 맞게 Tool 호출
+# - Trivy 스캔 필요? → scan_with_trivy 호출
+# - 코드 분석 필요? → scan_with_semgrep 호출
+# - 우선순위 계산? → calculate_priority_score 호출
+result = crew.kickoff()  # LLM이 전체 워크플로우 주도
 ```
 
-**회사 프로젝트 대비 개선 효과**:
-- ✅ **하드코딩 제거**: 300줄 if/elif 체인 → 50줄 프롬프트
-- ✅ **자동 적응**: 새로운 Semgrep 룰에 코드 수정 없이 대응
-- ✅ **정확도 향상**: rule_id + message 컨텍스트 기반 분류
-- ✅ **LLM 역할 확대**: 검증/우선순위화 → 분류까지 전체 워크플로우 담당
+**개선 효과**:
+- ✅ Node.js 제어 → Agent 자율 실행
+- ✅ 수동 컨텍스트 전달 → 자동 컨텍스트 공유
+- ✅ LLM 역할: 검증/우선순위화 → 전체 워크플로우 주도
 
-### 2. 프롬프트 엔지니어링 (Format 명시)
+### 2. Dual Model Strategy (작업별 최적 모델 선택)
+
+```python
+# src/utils/model_selector.py
+class TaskComplexity(Enum):
+    # Thinking Model (복잡한 추론 및 생성)
+    CRITICAL_ANALYSIS = "critical_analysis"
+    VULNERABILITY_TRIAGE = "vulnerability_triage"
+
+    # Instruct Model (빠른 실행 및 포맷팅)
+    TOOL_CALLING = "tool_calling"
+
+# Agent별 모델 자동 선택
+# Security Analyst, Semgrep Specialist, Triage Specialist: Thinking Model
+# Remediation Engineer: Instruct Model (PR 템플릿 생성)
+```
+
+**OpenRouter 가격 (2025년 1월 기준):**
+- `qwen/qwen3-next-80b-a3b-thinking`: $0.10/M input, $0.80/M output
+- `qwen/qwen3-next-80b-a3b-instruct`: $0.10/M input, $0.80/M output
+
+두 모델 가격이 동일하므로, **작업 특성에 맞는 모델 선택**이 목적:
+- **Thinking Model**: 복잡한 추론 (분석, 리스크 평가)
+- **Instruct Model**: 빠르고 결정적인 응답 (포맷팅, 템플릿 생성)
+
+### 3. 프롬프트 엔지니어링 (Format 명시)
 
 **에이전트 프롬프트 예시**:
 ```markdown
@@ -548,7 +564,7 @@ def _extract_category(self, rule_id: str, message: str):
 - ✅ 포맷 변환 코드 불필요
 - ✅ LLM이 첫 시도에 올바른 형식 생성
 
-### 3. Langfuse Observability
+### 4. Langfuse Observability
 
 **실시간 추적 항목**:
 ```python
@@ -813,28 +829,44 @@ security-agent-portfolio/
 │   │   └── orchestrator_agent.py     # 전체 워크플로우 조율
 │   ├── tools/
 │   │   ├── scanner_tools.py          # Trivy 스캔 도구
-│   │   ├── semgrep_tools.py          # Semgrep SAST 도구 (LLM 기반 분류)
-│   │   ├── analysis_tools.py         # 우선순위 계산 도구
+│   │   ├── semgrep_tools.py          # Semgrep SAST
+│   │   ├── analysis_tools.py         # 우선순위 계산
 │   │   ├── fix_tools_v2.py           # 수정 코드 생성 (LLM 기반)
 │   │   └── github_tools.py           # PR 자동화
 │   ├── prompts/
-│   │   └── crew_agents/
-│   │       ├── security_analyst.md   # Security Analyst 프롬프트
-│   │       ├── semgrep_specialist.md # Semgrep Specialist 프롬프트
-│   │       ├── triage_specialist.md  # Triage Specialist 프롬프트
-│   │       └── remediation_engineer.md # Remediation Engineer 프롬프트
+│   │   ├── README.md                 # 프롬프트 관리 가이드
+│   │   └── crew_agents/              # 에이전트별 프롬프트
+│   │       ├── security_analyst.md
+│   │       ├── semgrep_specialist.md
+│   │       ├── triage_specialist.md
+│   │       └── remediation_engineer.md
 │   ├── utils/
-│   │   ├── model_selector.py         # Dual Model Strategy 구현
+│   │   ├── model_selector.py         # Dual Model Strategy
 │   │   ├── prompt_manager.py         # 프롬프트 로딩 유틸
-│   │   └── logger.py                 # 보안 이벤트 로깅
+│   │   ├── logger.py                 # 보안 이벤트 로깅
+│   │   └── performance.py            # 성능 트레이싱
 │   └── models/
 │       └── llm_config.py             # LLM 설정 관리
 ├── demo/
 │   └── hello-world-vulnerable/       # 취약점 테스트용 Flask 앱
+│       ├── app.py
+│       └── README.md
+├── tests/
+│   ├── test_tools.py                 # Tool 단위 테스트
+│   ├── test_agents.py                # Agent 통합 테스트
+│   ├── test_fix_tools_v2.py          # Fix 도구 테스트
+│   └── conftest.py                   # Pytest 설정
+├── results/                          # 스캔 결과 및 PR 템플릿
+├── logs/                             # 보안 이벤트 로그
 ├── docker-compose.yml                # 서비스 오케스트레이션
+├── Dockerfile                        # Security Agent 컨테이너
 ├── streamlit_app.py                  # Web UI
+├── main.py                           # CLI 엔트리포인트
 ├── requirements.txt                  # Python 의존성
-└── .env.example                      # 환경변수 템플릿
+├── .env.example                      # 환경변수 템플릿
+├── README.md                         # 프로젝트 개요
+├── PORTFOLIO.md                      # 상세 기술 문서
+└── MOTIVATION.md                     # 지원 동기
 ```
 
 ---
