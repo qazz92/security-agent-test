@@ -161,6 +161,9 @@ class SecurityAgentUI:
                 else:
                     st.error("❌ Project path does not exist!")
 
+            if st.button("⚡ Load Last Result (Fast)", use_container_width=True):
+                self.load_last_result()
+
             if st.button("📊 Load Demo Results", use_container_width=True):
                 self.load_demo_results()
 
@@ -336,6 +339,8 @@ class SecurityAgentUI:
 
         with col5:
             duration = analysis_summary.get("analysis_duration", 0)
+            if duration is None:
+                duration = 0
             st.metric("⏱️ Analysis Time", f"{duration:.1f}s")
 
     def show_vulnerabilities_tab(self, results: Dict[str, Any]):
@@ -745,6 +750,23 @@ class SecurityAgentUI:
             if st.button("📤 Export Logs"):
                 filename = self.security_logger.export_logs("security_logs_export.json")
                 st.success(f"Logs exported: {filename}")
+
+    def load_last_result(self):
+        """마지막 분석 결과 로드 (실제 결과 캐시 + 자동 re-parsing)"""
+        try:
+            # Use orchestrator's _load_last_result() which includes re-parsing logic
+            from src.agents.orchestrator_agent import SecurityOrchestrator
+            orchestrator = SecurityOrchestrator(verbose=False)
+            cached_result = orchestrator._load_last_result()
+
+            if cached_result:
+                st.session_state.analysis_results = cached_result
+                st.success("⚡ Last analysis result loaded successfully! (instant)")
+                st.rerun()
+            else:
+                st.warning("⚠️ No cached result found. Please run an analysis first.")
+        except Exception as e:
+            st.error(f"❌ Failed to load cached result: {e}")
 
     def load_demo_results(self):
         """데모 결과 로드"""

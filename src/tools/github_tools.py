@@ -42,17 +42,17 @@ class CreateGitHubPRTool(BaseTool):
 
     name: str = "create_github_pr"
     description: str = """
-    GitHub Repository에 실제 Pull Request를 생성합니다.
+    GitHub Pull Request 템플릿 파일을 생성합니다.
 
-    사용 방법:
-    1. 로컬 변경사항을 커밋
-    2. 새 브랜치 생성
-    3. 원격 저장소에 푸시
-    4. GitHub API로 PR 생성
+    생성되는 파일:
+    - /app/results/pr_template_{timestamp}.md
+    - PR 제목, 본문, 생성 방법 포함
+    - GitHub CLI, Web UI, API 사용 방법 안내
 
-    인증 방법:
-    - 옵션 1: GitHub CLI (gh) - 자동 인증 (권장)
-    - 옵션 2: GITHUB_TOKEN 환경 변수 설정
+    실제 PR 생성은 사용자가 직접 수행:
+    - 옵션 1: GitHub CLI (gh pr create)
+    - 옵션 2: GitHub Web UI
+    - 옵션 3: GitHub API (curl)
     """
     args_schema: type[BaseModel] = CreateGitHubPRInput
 
@@ -65,7 +65,7 @@ class CreateGitHubPRTool(BaseTool):
         base_branch: str = "main"
     ) -> Dict[str, Any]:
         """
-        GitHub PR 생성 실행
+        GitHub PR 템플릿 파일 생성
 
         Args:
             repo_url: GitHub 저장소 URL
@@ -75,111 +75,141 @@ class CreateGitHubPRTool(BaseTool):
             base_branch: 베이스 브랜치
 
         Returns:
-            PR 생성 결과
+            PR 템플릿 파일 생성 결과
         """
-        try:
-            # 인증 방법 확인
-            use_github_cli = self._check_github_cli()
-            github_token = os.environ.get('GITHUB_TOKEN')
+        import datetime
 
-            if not use_github_cli and not github_token:
-                return {
-                    "success": False,
-                    "error": "No authentication method available",
-                    "message": "Please either:\n1. Install GitHub CLI: brew install gh && gh auth login\n2. Set GITHUB_TOKEN environment variable",
-                    "installation_guide": "https://cli.github.com/manual/installation"
-                }
+        try:
+            # results 디렉토리가 없으면 생성
+            results_dir = "/app/results"
+            os.makedirs(results_dir, exist_ok=True)
+
+            # 타임스탬프 생성
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # PR 템플릿 파일 생성
+            pr_file_path = os.path.join(results_dir, f"pr_template_{timestamp}.md")
 
             # 저장소에서 owner/repo 추출
             repo_path = self._extract_repo_path(repo_url)
 
-            # 현재 브랜치 확인
-            current_branch = subprocess.run(
-                ['git', 'branch', '--show-current'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            ).stdout.strip()
+            # PR 템플릿 내용 구성
+            pr_template = f"""# Pull Request Template
 
-            # 새 브랜치 생성 (이미 있으면 전환)
-            print(f"📝 Creating/switching to branch: {branch_name}")
-            branch_result = subprocess.run(
-                ['git', 'checkout', '-B', branch_name],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+## Repository Information
+- **Repository**: {repo_url}
+- **Owner/Repo**: {repo_path}
+- **Base Branch**: {base_branch}
+- **Branch Name**: {branch_name}
+- **Generated**: {timestamp}
 
-            if branch_result.returncode != 0:
-                return {
-                    "success": False,
-                    "error": "Failed to create/switch branch",
-                    "details": branch_result.stderr
-                }
+---
 
-            # 변경사항이 있는지 확인
-            status_result = subprocess.run(
-                ['git', 'status', '--porcelain'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+# {pr_title}
 
-            has_changes = bool(status_result.stdout.strip())
+{pr_body}
 
-            if has_changes:
-                print("📦 Staging changes...")
-                subprocess.run(['git', 'add', '.'], check=True, timeout=10)
+---
 
-                print("💾 Creating commit...")
-                commit_message = f"{pr_title}\n\n{pr_body[:200]}..."
-                subprocess.run(
-                    ['git', 'commit', '-m', commit_message],
-                    check=True,
-                    timeout=10
-                )
+## How to Create This PR
 
-            # 원격 브랜치에 푸시
-            print(f"🚀 Pushing to remote: {branch_name}")
-            push_result = subprocess.run(
-                ['git', 'push', '-u', 'origin', branch_name, '--force'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+### Option 1: Using GitHub CLI (Recommended)
+```bash
+# Clone the repository
+git clone {repo_url}
+cd {repo_path.split('/')[-1]}
 
-            if push_result.returncode != 0:
-                return {
-                    "success": False,
-                    "error": "Failed to push to remote",
-                    "details": push_result.stderr
-                }
+# Create and switch to the branch
+git checkout -b {branch_name}
 
-            # PR 생성 - 인증 방법에 따라 분기
-            print(f"🔀 Creating Pull Request on GitHub...")
+# Apply your fixes (generated code from security scan)
+# ... copy fix files here ...
 
-            if use_github_cli:
-                # 방법 1: GitHub CLI 사용
-                return self._create_pr_with_cli(
-                    repo_path, base_branch, branch_name, pr_title, pr_body, has_changes
-                )
-            else:
-                # 방법 2: GitHub API 직접 호출
-                return self._create_pr_with_api(
-                    repo_path, base_branch, branch_name, pr_title, pr_body, github_token, has_changes
-                )
+# Commit changes
+git add .
+git commit -m "{pr_title}"
 
-        except subprocess.TimeoutExpired:
+# Push to remote
+git push -u origin {branch_name}
+
+# Create PR using GitHub CLI
+gh pr create \\
+  --base {base_branch} \\
+  --head {branch_name} \\
+  --title "{pr_title}" \\
+  --body-file {pr_file_path}
+```
+
+### Option 2: Using GitHub Web UI
+1. Clone repository: `git clone {repo_url}`
+2. Create branch: `git checkout -b {branch_name}`
+3. Apply fixes and commit changes
+4. Push: `git push -u origin {branch_name}`
+5. Go to {repo_url}/pulls
+6. Click "New Pull Request"
+7. Select base: `{base_branch}` and compare: `{branch_name}`
+8. Copy the content below into PR description
+
+### Option 3: Using GitHub API
+```bash
+# Set your GitHub token
+export GITHUB_TOKEN="your_github_token_here"
+
+# Clone and prepare branch
+git clone {repo_url}
+cd {repo_path.split('/')[-1]}
+git checkout -b {branch_name}
+
+# Apply fixes and commit
+git add .
+git commit -m "{pr_title}"
+git push -u origin {branch_name}
+
+# Create PR via API
+curl -X POST \\
+  -H "Authorization: token $GITHUB_TOKEN" \\
+  -H "Accept: application/vnd.github.v3+json" \\
+  https://api.github.com/repos/{repo_path}/pulls \\
+  -d '{{
+    "title": "{pr_title}",
+    "body": "See {pr_file_path} for full details",
+    "head": "{branch_name}",
+    "base": "{base_branch}"
+  }}'
+```
+
+---
+
+## 🤖 Generated by AI Security Agent Portfolio
+"""
+
+            # 파일 저장
+            with open(pr_file_path, 'w', encoding='utf-8') as f:
+                f.write(pr_template)
+
+            print(f"✅ PR template saved to: {pr_file_path}")
+
             return {
-                "success": False,
-                "error": "Operation timed out",
-                "message": "Git/GitHub operation took too long"
+                "success": True,
+                "pr_template_file": pr_file_path,
+                "repo_url": repo_url,
+                "repo_path": repo_path,
+                "base_branch": base_branch,
+                "branch_name": branch_name,
+                "pr_title": pr_title,
+                "message": f"PR template saved to {pr_file_path}. Use GitHub CLI, Web UI, or API to create the actual PR.",
+                "instructions": {
+                    "github_cli": f"gh pr create --base {base_branch} --head {branch_name} --title \"{pr_title}\" --body-file {pr_file_path}",
+                    "web_ui": f"{repo_url}/compare/{base_branch}...{branch_name}?expand=1",
+                    "file_location": pr_file_path
+                }
             }
+
         except Exception as e:
             return {
                 "success": False,
-                "error": f"Unexpected error: {str(e)}",
-                "message": "An unexpected error occurred while creating PR"
+                "error": f"Failed to create PR template: {str(e)}",
+                "message": "An error occurred while creating PR template file"
             }
 
     def _check_github_cli(self) -> bool:

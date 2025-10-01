@@ -464,6 +464,13 @@ class GenerateSecurityMetricsTool(BaseTool):
 
             import time
 
+            # 🔥 성능 최적화: P0-P1 (CRITICAL, HIGH)만 상세 분석
+            # MEDIUM, LOW는 카운트만 수행 (토큰 사용량 대폭 감소)
+            critical_and_high_vulns = [
+                v for v in vulnerabilities
+                if v.get('severity') in ['CRITICAL', 'HIGH']
+            ]
+
             # 보안 점수 계산 (100점 만점)
             total_vulns = len(vulnerabilities)
             critical_count = len([v for v in vulnerabilities if v.get('severity') == 'CRITICAL'])
@@ -504,11 +511,19 @@ class GenerateSecurityMetricsTool(BaseTool):
                 }
             }
 
-            # 타입별 분류
-            for vuln in vulnerabilities:
+            # 타입별 분류 (P0-P1만 상세 분류, 나머지는 요약)
+            for vuln in critical_and_high_vulns:
                 vuln_type = vuln.get('type', 'UNKNOWN')
                 metrics["vulnerability_metrics"]["by_type"][vuln_type] = \
                     metrics["vulnerability_metrics"]["by_type"].get(vuln_type, 0) + 1
+
+            # MEDIUM, LOW는 개수만 표시
+            medium_count = len([v for v in vulnerabilities if v.get('severity') == 'MEDIUM'])
+            low_count = len([v for v in vulnerabilities if v.get('severity') == 'LOW'])
+            if medium_count > 0:
+                metrics["vulnerability_metrics"]["by_type"]["MEDIUM_OTHERS"] = medium_count
+            if low_count > 0:
+                metrics["vulnerability_metrics"]["by_type"]["LOW_OTHERS"] = low_count
 
             return metrics
 

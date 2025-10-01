@@ -61,14 +61,16 @@ class ModelSelector:
 
     # 작업별 모델 매핑
     TASK_MODEL_MAPPING = {
-        # Instruct Model로 임시 변경 (Thinking 모델 응답 형식 문제)
-        TaskComplexity.CRITICAL_ANALYSIS: "instruct",
-        TaskComplexity.RISK_ASSESSMENT: "instruct",
-        TaskComplexity.VULNERABILITY_TRIAGE: "instruct",
-        TaskComplexity.SECURITY_DESIGN: "instruct",
-        TaskComplexity.ROOT_CAUSE_ANALYSIS: "instruct",
+        # Thinking Model 사용 (복잡한 추론)
+        # OpenRouter reasoning parameter 지원 (2025-09-30 확인)
+        # LiteLLM 1.74.9+ supports reasoning_content extraction
+        TaskComplexity.CRITICAL_ANALYSIS: "thinking",
+        TaskComplexity.RISK_ASSESSMENT: "thinking",
+        TaskComplexity.VULNERABILITY_TRIAGE: "thinking",
+        TaskComplexity.SECURITY_DESIGN: "thinking",
+        TaskComplexity.ROOT_CAUSE_ANALYSIS: "thinking",
 
-        # Instruct Model 사용
+        # Instruct Model 사용 (단순 실행 작업)
         TaskComplexity.TOOL_CALLING: "instruct",
         TaskComplexity.DATA_FORMATTING: "instruct",
         TaskComplexity.TEMPLATE_GENERATION: "instruct",
@@ -109,11 +111,13 @@ class ModelSelector:
         config = ModelConfig.THINKING if model_type == "thinking" else ModelConfig.INSTRUCT
 
         # 파라미터 설정
-        # LiteLLM requires 'openrouter/' prefix for provider detection
-        model_name = f"openrouter/{config['model']}"
+        # CrewAI/LiteLLM requires 'openrouter/' prefix, but Langfuse doesn't accept it
+        # Use prefix for API calls, but store original name for Langfuse metadata
+        base_model_name = config['model']
+        model_name_with_prefix = f"openrouter/{base_model_name}"
 
         params = {
-            "model": model_name,
+            "model": model_name_with_prefix,  # CrewAI/LiteLLM needs prefix
             "temperature": config["temperature"],
             "max_tokens": config["max_tokens"],
             "openai_api_key": self.api_key,
@@ -123,9 +127,23 @@ class ModelSelector:
                 "extra_headers": {
                     "HTTP-Referer": "https://github.com/security-agent-portfolio",
                     "X-Title": f"SecurityAgent-{task_complexity.value}",
+                },
+                # Pass original model name for Langfuse (without prefix)
+                "metadata": {
+                    "model_name": base_model_name,  # Langfuse will use this
                 }
             }
         }
+
+        # OpenRouter Thinking 모델 설정: reasoning parameter 추가
+        if model_type == "thinking":
+            params["model_kwargs"]["extra_body"] = {
+                "reasoning": {
+                    "max_tokens": 2000,  # 추론 과정에 충분한 토큰 제공
+                    "enabled": True      # 명시적으로 reasoning 활성화
+                }
+            }
+            logger.info(f"   🧠 Reasoning enabled: max_tokens=2000")
 
         # 오버라이드 적용
         if override_params:

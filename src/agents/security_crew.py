@@ -54,20 +54,38 @@ class SecurityCrewManager:
             langfuse_host = os.getenv('LANGFUSE_HOST', 'http://langfuse-server:3000')
 
             if langfuse_public_key and not langfuse_public_key.startswith('pk-lf-your'):
-                # LiteLLM Langfuse 통합 설정
-                litellm.success_callback = ["langfuse"]
-                litellm.failure_callback = ["langfuse"]
-
                 # Langfuse 환경변수 설정 (LiteLLM이 자동으로 사용)
                 os.environ["LANGFUSE_PUBLIC_KEY"] = langfuse_public_key
                 os.environ["LANGFUSE_SECRET_KEY"] = langfuse_secret_key
                 os.environ["LANGFUSE_HOST"] = langfuse_host
 
-                # LiteLLM이 OpenRouter를 기본 provider로 사용하도록 설정
-                litellm.set_verbose = True
+                # OpenRouter API 설정
                 os.environ["OPENROUTER_API_KEY"] = os.getenv('OPENROUTER_API_KEY')
 
-                logger.info(f"✅ LiteLLM configured for OpenRouter")
+                # Custom callback to clean model names before Langfuse logging
+                def clean_model_name_for_langfuse(
+                    kwargs,
+                    completion_response,
+                    start_time,
+                    end_time
+                ):
+                    """Remove 'openrouter/' prefix from model name for Langfuse"""
+                    try:
+                        if 'litellm_params' in kwargs and 'model' in kwargs['litellm_params']:
+                            model = kwargs['litellm_params']['model']
+                            if model.startswith('openrouter/'):
+                                kwargs['litellm_params']['model'] = model.replace('openrouter/', '', 1)
+                                logger.debug(f"Cleaned model name for Langfuse: {model} -> {kwargs['litellm_params']['model']}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean model name: {e}")
+
+                # Register custom callback BEFORE langfuse callback
+                # This ensures model name is cleaned before being sent to Langfuse
+                litellm.success_callback = [clean_model_name_for_langfuse, "langfuse"]
+                litellm.failure_callback = ["langfuse"]
+                litellm.set_verbose = True
+
+                logger.info(f"✅ LiteLLM configured for OpenRouter with Langfuse model name normalization")
 
                 # Langfuse Client 초기화
                 self.langfuse_client = Langfuse(
@@ -278,6 +296,8 @@ class SecurityCrewManager:
         logger.info("📋 [TASK 1/4] Creating Dependency Vulnerability Scan task")
         dependency_scan_task = Task(
             description=f"""
+[PARALLEL TASK - Can run independently with Task 2]
+
 Perform comprehensive dependency vulnerability scanning on the project at: {project_path}
 
 Steps:
@@ -296,13 +316,16 @@ Deliver a detailed JSON report containing:
 Focus on accuracy and completeness. Do not miss any vulnerabilities.
 """,
             agent=self.security_analyst,
-            expected_output="JSON report with complete list of dependency vulnerabilities including CVE IDs, severity, affected components, and CVSS scores"
+            expected_output="JSON report with complete list of dependency vulnerabilities including CVE IDs, severity, affected components, and CVSS scores",
+            async_execution=True  # 병렬 실행 활성화
         )
 
         # Task 2: 코드 레벨 취약점 스캔 (Semgrep SAST)
         logger.info("📋 [TASK 2/4] Creating SAST Code Vulnerability Scan task")
         code_scan_task = Task(
             description=f"""
+[PARALLEL TASK - Can run independently with Task 1]
+
 Perform deep static code analysis (SAST) on the project at: {project_path}
 
 Steps:
@@ -328,7 +351,8 @@ Deliver a detailed SAST report containing:
 Focus on real exploitable vulnerabilities, not just theoretical issues.
 """,
             agent=self.semgrep_specialist,
-            expected_output="SAST report with code-level vulnerabilities including Semgrep findings, code snippets, CWE mappings, and fix suggestions"
+            expected_output="SAST report with code-level vulnerabilities including Semgrep findings, code snippets, CWE mappings, and fix suggestions",
+            async_execution=True  # 병렬 실행 활성화
         )
 
         # Task 3: 통합 우선순위 평가 및 리스크 분석
@@ -347,18 +371,22 @@ Using BOTH the dependency scan results AND the SAST code scan results from the p
 3. Generate security metrics and risk assessment
 4. Group vulnerabilities by priority level (P0, P1, P2, P3)
 
-Deliver a comprehensive prioritized action plan with:
-- Top 10 critical vulnerabilities (combining dependency and code-level issues)
+Deliver a prioritized action plan with:
+- **Top 50 most critical vulnerabilities** (combining dependency and code-level issues)
+- For remaining vulnerabilities: summary counts by severity (e.g., "+ 150 more: 80 MEDIUM, 70 LOW")
 - Risk scores and justification for each priority
 - Estimated remediation effort
 - Business impact analysis
 - Clear distinction between dependency vs code-level vulnerabilities
 
+**IMPORTANT**: Focus on the TOP 50 most critical vulnerabilities to stay within LLM context limits.
+Provide summary statistics for remaining vulnerabilities but do not pass full details.
+
 Consider real-world exploitation likelihood and business context, not just CVSS scores.
 Prioritize code-level vulnerabilities (SQL Injection, XSS, etc.) higher than outdated dependencies.
 """,
             agent=self.triage_specialist,
-            expected_output="Prioritized vulnerability list combining both dependency and code-level issues, with risk scores, business impact analysis, and recommended remediation order",
+            expected_output="Prioritized list of TOP 50 most critical vulnerabilities with detailed analysis, plus summary counts for remaining vulnerabilities, risk scores, business impact analysis, and recommended remediation order",
             context=[dependency_scan_task, code_scan_task]  # 두 스캔 결과 모두 전달
         )
 
@@ -368,19 +396,21 @@ Prioritize code-level vulnerabilities (SQL Injection, XSS, etc.) higher than out
             description=f"""
 Generate automated security fixes and create a GitHub Pull Request.
 
-Using the prioritized vulnerability list from the triage specialist:
-1. Generate specific fix code for the top 10 critical vulnerabilities (both dependency and code-level)
+Using the prioritized vulnerability list from the triage specialist (TOP 50 vulnerabilities):
+
+1. Generate specific fix code for the TOP 50 prioritized vulnerabilities (both dependency and code-level)
 2. Create a comprehensive PR template with:
-   - Summary of fixes
+   - Summary of fixes for TOP 50 vulnerabilities
+   - Summary statistics for remaining vulnerabilities (e.g., "+ 150 more: 80 MEDIUM, 70 LOW")
    - Security impact analysis
    - Testing instructions
-   - Before/after code comparison
+   - Before/after code comparison for each vulnerability
 3. Generate security documentation explaining the fixes
 4. Create automated fix scripts where applicable
 5. **MANDATORY: Create a GitHub Pull Request automatically**
    - Repository: {github_repo_url}
    - Branch: security-fix-{{timestamp}}
-   - Title: "Security Fixes: Critical Vulnerability Remediation"
+   - Title: "Security Fixes: Top 50 Critical Vulnerability Remediation"
 
 CRITICAL REQUIREMENT:
 You MUST call the create_github_pr tool to create an actual Pull Request on GitHub.
@@ -388,19 +418,68 @@ This is not optional - it is your primary objective.
 
 Parameters for create_github_pr:
 - repo_url: {github_repo_url}
-- pr_title: "Security Fixes: Critical Vulnerability Remediation"
+- pr_title: "Security Fixes: Top 50 Critical Vulnerability Remediation"
 - pr_body: <use the PR template you generated>
 - branch_name: security-fix-{{current_timestamp}}
 - base_branch: main
 
+**OUTPUT FORMAT REQUIREMENT (MANDATORY):**
+
+⚠️ **YOU MUST WRAP YOUR JSON OUTPUT IN MARKDOWN CODE BLOCK** ⚠️
+
+Your response must start with ```json and end with ```.
+
+**EXACT FORMAT:**
+
+\```json
+{{
+  "summary": {{
+    "total_vulnerabilities": <number>,
+    "critical_count": <number>,
+    "high_count": <number>,
+    "medium_count": <number>,
+    "low_count": <number>,
+    "fixed_count": <number>,
+    "remaining_summary": "<summary text>"
+  }},
+  "vulnerabilities": [
+    {{
+      "type": "<TYPE>",
+      "file": "<file:line>",
+      "severity": "CRITICAL",
+      "description": "<description>",
+      "before_code": "<code>",
+      "after_code": "<code>",
+      "explanation": "<why>"
+    }}
+  ],
+  "pr_template": "<markdown>",
+  "security_docs": "<markdown>",
+  "pr_url": "<url>"
+}}
+\```
+
+**CRITICAL RULES:**
+1. First line MUST be: ```json
+2. Last line MUST be: ```
+3. Between them: Valid JSON only
+4. NO text before ```json
+5. NO text after ```
+6. PR template goes INSIDE "pr_template" field as a string
+7. **ESCAPE ALL SPECIAL CHARACTERS**: Use \\n for newlines, \\" for quotes, \\\\ for backslashes
+8. **NO LITERAL NEWLINES**: Multi-line strings MUST use \\n escape sequences
+9. **EXAMPLE**: "pr_template": "# Title\\n\\nContent with \\"quotes\\" and\\nmore lines"
+
 Deliver:
-- Generated fix code for each vulnerability
-- Comprehensive PR template
-- Security documentation
+- Structured JSON output with TOP 50 vulnerabilities (detailed fixes)
+- Summary counts for remaining vulnerabilities
+- Fix code for each top 50 vulnerability in the JSON structure
+- Comprehensive PR template inside JSON
+- Security documentation inside JSON
 - GitHub PR URL (proof that PR was created)
 """,
             agent=self.remediation_engineer,
-            expected_output="Fix code, PR template, security documentation, and GitHub PR URL proving the PR was successfully created",
+            expected_output="Fix code for TOP 50 vulnerabilities, PR template with summary of remaining issues, security documentation, and GitHub PR URL proving the PR was successfully created",
             context=[triage_task]  # 자동으로 triage_task 결과 전달
         )
 

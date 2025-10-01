@@ -1,237 +1,502 @@
 # 🛡️ AI Security Agent Portfolio
 
-AI-powered security vulnerability scanner with automated remediation using CrewAI multi-agent system.
+> DevSecOps 실무 경험을 최신 AI 기술(CrewAI, LangChain)로 재구성한 **Agentic Workflow 보안 자동화 시스템**
+
+
+
+---
+
+## 📌 프로젝트 개요
+
+실무에서 구축한 **DevSecOps 파이프라인**(GitHub Actions → Trivy → Lambda → AWS Bedrock → Security Hub)의 한계를 극복하기 위해, **CrewAI 멀티 에이전트 시스템**과 **LangChain Tool Calling**을 활용하여 완전히 새롭게 설계한 보안 자동화 포트폴리오입니다.
+
+### 🎯 핵심 차별점
+
+| 구분 | 실무 프로젝트 (2025) | 본 포트폴리오 |
+|------|---------------------|----------------|
+| **워크플로우 제어** | Node.js Lambda 코드가 순차 실행 | **에이전트 자율 실행** (CrewAI) |
+| **LLM 역할** | 검증 + 우선순위화만 | **전체 워크플로우 주도** |
+| **컨텍스트 공유** | 수동 전달 (매번 전체 전달) | **자동 전달** (에이전트 간) |
+| **하드코딩** | 취약점 분류 300+ 줄 if/elif | **LLM 기반 분류** (0줄) |
+| **확장성** | 새 도구 추가 시 2시간 | **30분** (Tool 추가만) |
+| **Observability** | 없음 | **Langfuse 트레이싱** |
+
+### 🏆 기술 스택
+
+**AI/ML**:
+- CrewAI (Multi-agent orchestration)
+- LangChain (Tool Calling, Prompt Templates)
+- OpenRouter (70+ LLM models)
+- Langfuse (LLM observability)
+
+**Security Tools**:
+- Trivy (Container/dependency vulnerability scanner)
+- Semgrep (SAST - Static Application Security Testing)
+
+**Infrastructure**:
+- Docker Compose (Service orchestration)
+- PostgreSQL (Langfuse database)
+- Streamlit (Web UI)
+
+
+
+---
 
 ## 🚀 Quick Start
 
+### 1. 사전 준비
+
 ```bash
-# 1. Clone repository
+# OpenRouter API Key 발급 (필수)
+# https://openrouter.ai 에서 가입 및 API Key 생성
+
+# GitHub Personal Access Token 발급 (PR 자동화 사용 시)
+# https://github.com/settings/tokens
+```
+
+### 2. 프로젝트 실행
+
+```bash
+# 1. Repository Clone
 git clone <repo-url>
 cd security-agent-portfolio
 
-# 2. Copy environment variables
+# 2. 환경 변수 설정
 cp .env.example .env
 
-# 3. Add your API keys to .env
-# - OPENROUTER_API_KEY (required)
-# - GITHUB_TOKEN (required for PR automation)
+# 3. API Key 입력 (.env 파일 수정)
+# OPENROUTER_API_KEY=sk-or-v1-...
+# GITHUB_TOKEN=ghp_... (선택사항)
 
-# 4. Start all services with Docker Compose
+# 4. Docker Compose 실행
 docker-compose up -d
 ```
 
-**That's it!** 🎉 Access the application at http://localhost:8501
+**That's it!** 🎉
 
-## 📋 What's Included
+- **Security Agent UI**: http://localhost:8501
+- **Langfuse Dashboard**: http://localhost:3001 (demo@example.com / demo1234)
 
-- **Security Agent**: Multi-agent AI system for vulnerability analysis
-- **Langfuse Dashboard**: LLM tracing and observability (http://localhost:3001)
-- **Demo Vulnerable App**: Sample application for testing (`demo/hello-world-vulnerable/`)
+### 3. 데모 스캔 실행
 
-## 🔑 Demo Credentials
-
-### Langfuse Dashboard (http://localhost:3001)
-
-**Demo API Keys (Pre-configured)**:
 ```bash
-LANGFUSE_PUBLIC_KEY=pk-lf-demo-portfolio-public-key-1234567890
-LANGFUSE_SECRET_KEY=sk-lf-demo-portfolio-secret-key-1234567890abcdef
+# Streamlit UI에서:
+# 1. Project Path 입력: /app/demo/hello-world-vulnerable
+# 2. "Run Security Scan" 클릭
+# 3. 결과 확인 및 PR 템플릿 생성
 ```
 
-These keys are automatically created on first startup and already configured in `.env`.
+---
 
-To access the Langfuse web dashboard:
-1. Open http://localhost:3001
-2. Login with demo credentials:
-   - **Email**: `demo@example.com`
-   - **Password**: `demo1234`
-3. View LLM traces in real-time
-
-**Note**: Both the demo account and API keys are automatically created on first startup.
-
-## 🏗️ Architecture
+## 🤖 Agentic Workflow 아키텍처
 
 ### Multi-Agent System (CrewAI)
 
 ```
-Security Analyst → Trivy Scanner
-       ↓
-Semgrep Specialist → SAST Analysis
-       ↓
-Triage Specialist → Risk Prioritization
-       ↓
-Remediation Engineer → Auto-Fix & PR
+┌─────────────────────────────────────────────────────┐
+│          Security Orchestrator (전체 조율)           │
+└────────────────┬────────────────────────────────────┘
+                 │
+     ┌───────────┴───────────┐
+     ▼                       ▼
+┌──────────────┐    ┌──────────────────┐
+│Security      │    │Semgrep           │
+│Analyst       │    │Specialist        │
+│              │    │                  │
+│Tools:        │    │Tools:            │
+│- Trivy       │    │- Semgrep         │
+│              │    │- Config List     │
+│Model:        │    │                  │
+│Instruct      │    │Model: Instruct   │
+└──────┬───────┘    └──────────┬───────┘
+       │                       │
+       └───────────┬───────────┘
+                   ▼
+          ┌─────────────────┐
+          │Triage           │
+          │Specialist       │
+          │                 │
+          │Tools:           │
+          │- Priority Calc  │
+          │- Impact Assess  │
+          │                 │
+          │Model: Thinking  │ ← 복잡한 추론
+          └────────┬────────┘
+                   ▼
+        ┌────────────────────┐
+        │Remediation         │
+        │Engineer            │
+        │                    │
+        │Tools:              │
+        │- Fix Code Gen      │
+        │- PR Template       │
+        │                    │
+        │Model: Instruct     │
+        └────────────────────┘
 ```
 
-### Dual Model Strategy (Cost Optimization)
+### 실무 프로젝트 vs 포트폴리오 비교
 
-- **Thinking Model** (`qwen3-next-80b-thinking`): Complex analysis, decision-making
-- **Instruct Model** (`qwen3-next-80b-instruct`): Tool calling, formatting
+**실무 프로젝트 (Node.js + AWS Bedrock)**:
+```javascript
+// Node.js Lambda 코드가 워크플로우 제어 (의사코드)
+exports.handler = async (event) => {
+  // 1. SARIF 파싱 (하드코딩 300줄)
+  const vulnerabilities = classifyFromSARIF(sarif);
 
-## 📊 LLM Observability
+  // 2. AWS Bedrock: 온도 교차 검증
+  const verified = await crossValidate(vulnerabilities);
 
-All LLM calls are automatically traced to Langfuse:
-- Token usage per agent
-- Cost tracking
-- Latency monitoring
-- Tool call analysis
+  // 3. AWS Bedrock: 우선순위화
+  const prioritized = await prioritize(verified);
 
-**OpenRouter + Langfuse**: Yes, fully supported! OpenRouter is OpenAI-compatible, so all API calls are traced through Langfuse callbacks.
+  // 4. Security Hub 전송
+  await sendToSecurityHub(prioritized);
+};
+```
 
-## 🔧 Configuration
+**포트폴리오 (CrewAI + LangChain)**:
+```python
+# CrewAI가 에이전트 간 자동 조율
+crew = Crew(
+    agents=[analyst, semgrep, triage, remediation],
+    tasks=[task1, task2, task3, task4],
+    process=Process.SEQUENTIAL  # 순차 실행, 자동 컨텍스트 전달
+)
 
-### Required Environment Variables
+# LLM이 전체 워크플로우 주도
+result = crew.kickoff()
+```
+
+---
+
+## 🔧 핵심 기술 구현
+
+### 1. LLM 기반 취약점 분류 (하드코딩 제거)
+
+**실무 방식**: 300줄 if/elif 체인
+```javascript
+// SARIF 파싱 후 하드코딩 분류 (의사코드)
+if (ruleId.includes('sql')) return 'SQL_INJECTION';
+if (ruleId.includes('xss')) return 'XSS';
+// ... 50+ 취약점 타입
+```
+
+**포트폴리오 방식**: LLM 프롬프트 엔지니어링
+```python
+# 50줄 프롬프트로 대체
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """Classify into EXACT types:
+    - SQL_INJECTION, XSS, COMMAND_INJECTION, ...
+    Return ONLY the type."""),
+    ("user", "Rule ID: {rule_id}\nMessage: {message}")
+])
+```
+
+**개선 효과**:
+- ✅ 300줄 코드 → 50줄 프롬프트
+- ✅ 새로운 Semgrep 룰 자동 대응
+- ✅ rule_id + message 컨텍스트 기반 정확도 향상
+
+### 2. Dual Model Strategy (비용 최적화)
+
+```python
+# src/utils/model_selector.py
+class TaskComplexity(Enum):
+    # Thinking Model (복잡한 추론)
+    RISK_ASSESSMENT = "risk_assessment"
+    VULNERABILITY_TRIAGE = "vulnerability_triage"
+
+    # Instruct Model (단순 실행)
+    TOOL_CALLING = "tool_calling"
+    DATA_FORMATTING = "data_formatting"
+
+# 작업별 모델 자동 선택
+triage_llm = model_selector.get_llm(
+    TaskComplexity.RISK_ASSESSMENT  # → Thinking Model
+)
+```
+
+**비용 절감 효과**:
+```
+단일 모델: 1,000,000 tokens × $0.0020 = $2,000/월
+
+Dual Strategy:
+- Thinking: 200K tokens × $0.0020 = $400
+- Instruct: 800K tokens × $0.0010 = $800
+→ Total: $1,200/월 (40% 절감)
+```
+
+### 3. Langfuse Observability
+
+```python
+# 모든 LLM 호출 자동 추적
+import litellm
+litellm.success_callback = ["langfuse"]
+litellm.failure_callback = ["langfuse"]
+```
+
+**Langfuse 대시보드에서 확인**:
+- 📊 에이전트별 LLM 호출 횟수
+- 💰 토큰 사용량 및 비용
+- ⏱️ 레이턴시
+- 🔍 프롬프트/응답 내용
+
+---
+
+## 📊 실무 적용 시나리오
+
+### Input: Flask 취약점 스캔
 
 ```bash
-# OpenRouter API (LLM Provider)
-OPENROUTER_API_KEY=sk-or-v1-...
+Project: /app/demo/hello-world-vulnerable
+Files: app.py, requirements.txt
+```
 
-# GitHub (for PR automation)
-GITHUB_TOKEN=ghp_...
-GITHUB_REPO_URL=https://github.com/username/repo
+### Workflow Execution
 
-# Langfuse (auto-configured)
+**Step 1**: Security Analyst (Trivy)
+```
+[Tool Call] scan_with_trivy
+→ requests==2.25.1 (CVE-2023-xxxxx) HIGH
+→ flask==1.1.2 (CVE-2022-xxxxx) MEDIUM
+```
+
+**Step 2**: Semgrep Specialist (SAST)
+```
+[Tool Call] scan_with_semgrep
+→ app.py:57 - python.flask.security.injection.tainted-sql-string
+
+[LLM Classification]
+→ SQL_INJECTION (하드코딩 없이 LLM이 분류)
+```
+
+**Step 3**: Triage Specialist (리스크 평가)
+```
+[Thinking Model - Complex Reasoning]
+→ SQL Injection: Score 95/100 (Critical)
+→ CVE-2023-xxxxx: Score 85/100 (High)
+```
+
+**Step 4**: Remediation Engineer (수정 생성)
+```
+[Tool Call] generate_fix_code
+→ Parameterized query 생성
+
+[Tool Call] create_github_pr
+→ PR 템플릿 파일 생성: /app/results/pr_template_20250101.md
+```
+
+### Output: PR Template 자동 생성
+
+```markdown
+# Security Fixes - SQL Injection & Dependencies
+
+## 🐛 Vulnerabilities Fixed
+- SQL Injection (app.py:57) - CRITICAL
+- requests CVE-2023-xxxxx - HIGH
+
+## 🔧 Changes
+- Use parameterized queries with SQLAlchemy
+- Update requests to 2.31.0
+
+## 🤖 Generated by AI Security Agent
+```
+
+---
+
+## 🔑 환경 변수 설정
+
+### 필수 설정
+
+```bash
+# .env 파일
+OPENROUTER_API_KEY=sk-or-v1-...  # OpenRouter API Key
+GITHUB_TOKEN=ghp_...              # GitHub Personal Access Token (PR 자동화)
+```
+
+### 선택 설정
+
+```bash
+# 모델 선택
+MODEL_THINKING=qwen/qwen3-next-80b-a3b-thinking
+MODEL_INSTRUCT=qwen/qwen3-next-80b-a3b-instruct
+
+# Langfuse (자동 설정됨)
 LANGFUSE_PUBLIC_KEY=pk-lf-demo-portfolio-public-key-1234567890
 LANGFUSE_SECRET_KEY=sk-lf-demo-portfolio-secret-key-1234567890abcdef
 LANGFUSE_HOST=http://localhost:3001
 ```
 
-### Optional Configuration
+---
 
-```bash
-# Model Selection
-MODEL_THINKING=qwen/qwen3-next-80b-a3b-thinking
-MODEL_INSTRUCT=qwen/qwen3-next-80b-a3b-instruct
-
-# LLM Parameters
-TEMPERATURE=0.3
-MAX_TOKENS=4096
-```
-
-## 🎯 Usage
-
-### 1. Web UI (Streamlit)
-
-Access http://localhost:8501
-
-- Upload project or GitHub URL
-- Select scan type (Full/Quick)
-- View results and auto-generated fixes
-- Create GitHub PR with one click
-
-### 2. CLI
-
-```bash
-# Run scan
-python -m src.main scan --repo-url https://github.com/user/repo
-
-# Generate report
-python -m src.main report --format json
-```
-
-### 3. Demo Scan
-
-Test with the included vulnerable app:
-
-```bash
-# Scan demo app
-docker-compose run security-agent python -m src.main scan --path /app/demo/hello-world-vulnerable
-```
-
-## 📦 Services
+## 📦 서비스 구성
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| Security Agent | http://localhost:8501 | Main application UI |
-| Langfuse | http://localhost:3001 | LLM tracing dashboard |
-| PostgreSQL | localhost:5433 | Langfuse database |
+| **Security Agent** | http://localhost:8501 | Streamlit Web UI |
+| **Langfuse** | http://localhost:3001 | LLM Tracing Dashboard |
+| **PostgreSQL** | localhost:5433 | Langfuse Database |
 
-## 🧪 Demo Vulnerable Application
+### Langfuse 대시보드 로그인
 
-Located in `demo/hello-world-vulnerable/`:
-- 20+ intentional security vulnerabilities
-- SQL Injection, XSS, Command Injection
-- Perfect for testing the security agent
-
-```bash
-# Run vulnerable app
-cd demo/hello-world-vulnerable
-python app.py
-
-# Scan it
-# Use the Streamlit UI and enter: /app/demo/hello-world-vulnerable
+```
+Email: demo@example.com
+Password: demo1234
 ```
 
-## 🛠️ Development
+---
 
-### Local Development (without Docker)
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run Streamlit app
-streamlit run streamlit_app.py
-
-# Run tests
-pytest tests/
-```
-
-### Project Structure
+## 🛠️ 프로젝트 구조
 
 ```
 security-agent-portfolio/
 ├── src/
-│   ├── agents/          # CrewAI agents
-│   │   ├── security_crew.py      # Multi-agent orchestration
-│   │   └── ...
-│   ├── tools/           # Security scanning tools
-│   │   ├── trivy_tools.py        # Container/dependency scanning
-│   │   ├── semgrep_tools.py      # SAST code analysis
-│   │   └── github_tools.py       # PR automation
-│   ├── prompts/         # Agent system prompts
-│   └── models/          # LLM configuration
-├── demo/                # Demo vulnerable apps
-├── results/             # Scan results & reports
-├── docker-compose.yml   # Service orchestration
-└── streamlit_app.py     # Web UI
+│   ├── agents/
+│   │   ├── security_crew.py          # CrewAI 멀티 에이전트 오케스트레이션
+│   │   └── orchestrator_agent.py     # 전체 워크플로우 조율
+│   ├── tools/
+│   │   ├── scanner_tools.py          # Trivy 스캔 도구
+│   │   ├── semgrep_tools.py          # Semgrep SAST (LLM 기반 분류)
+│   │   ├── analysis_tools.py         # 우선순위 계산
+│   │   ├── fix_tools_v2.py           # 수정 코드 생성 (LLM 기반)
+│   │   └── github_tools.py           # PR 템플릿 생성
+│   ├── prompts/
+│   │   └── crew_agents/              # 에이전트별 프롬프트
+│   ├── utils/
+│   │   ├── model_selector.py         # Dual Model Strategy
+│   │   └── prompt_manager.py         # 프롬프트 로딩
+│   └── models/
+│       └── llm_config.py             # LLM 설정
+├── demo/
+│   └── hello-world-vulnerable/       # 취약점 테스트용 Flask 앱
+├── results/                          # 스캔 결과 및 PR 템플릿
+├── docker-compose.yml
+├── streamlit_app.py
+└── requirements.txt
 ```
+
+---
+
+## 🧪 데모 취약점 애플리케이션
+
+`demo/hello-world-vulnerable/`: 20+ 의도적 취약점 포함
+
+- SQL Injection
+- XSS (Cross-Site Scripting)
+- Command Injection
+- Path Traversal
+- Insecure Deserialization
+
+```bash
+# 데모 앱 스캔
+# Streamlit UI에서 Project Path: /app/demo/hello-world-vulnerable
+```
+
+---
+
+## 📚 관련 문서
+
+- **[PORTFOLIO.md](PORTFOLIO.md)**: 프로젝트 상세 설명 (기술 구현, 아키텍처, 실무 비교)
+- **[MOTIVATION.md](MOTIVATION.md)**: 제작 배경 및 지원 동기 (DevOps 경험, 학습 내용)
+
+---
 
 ## 🐛 Troubleshooting
 
-### Langfuse not tracking
+### Langfuse 추적 안 됨
 
 ```bash
-# Check if Langfuse is running
+# Langfuse 로그 확인
 docker logs langfuse-server
 
-# Verify API keys in database
-docker exec langfuse-db psql -U postgres -d langfuse -c "SELECT public_key FROM api_keys;"
-
-# Restart security-agent
+# Security Agent 재시작
 docker-compose restart security-agent
 ```
 
-### Port conflicts
+### 포트 충돌
 
-Edit `docker-compose.yml` and change port mappings:
 ```yaml
+# docker-compose.yml 수정
 ports:
-  - "8502:8501"  # Change left side (host port)
+  - "8502:8501"  # 왼쪽(호스트 포트) 변경
 ```
 
-## 📚 Technology Stack
+### OpenRouter API 오류
 
-- **AI Framework**: CrewAI, LangChain
-- **LLM Provider**: OpenRouter (OpenAI-compatible)
-- **Security Tools**: Trivy, Semgrep
-- **Observability**: Langfuse
-- **Web UI**: Streamlit
-- **Orchestration**: Docker Compose
+```bash
+# API Key 확인
+echo $OPENROUTER_API_KEY
+
+# 크레딧 확인: https://openrouter.ai/credits
+```
+
+---
+
+## 💡 로컬 개발 (Docker 없이)
+
+```bash
+# 의존성 설치
+pip install -r requirements.txt
+
+# Streamlit 실행
+streamlit run streamlit_app.py
+
+# 테스트 실행
+pytest tests/
+```
+
+---
+
+## 🎓 학습 포인트
+
+이 프로젝트를 통해 배운 내용:
+
+✅ **Agentic Workflow 설계**
+- 작업을 전문 에이전트로 분할하는 기준
+- 에이전트 간 컨텍스트 자동 전달 (CrewAI)
+- Tool Calling 구현 (LangChain BaseTool)
+
+✅ **LLM 프로덕션 적용**
+- 프롬프트 엔지니어링 (Format 명시, Few-shot)
+- 하드코딩 제거, LLM 기반 의사결정
+- 비용 최적화 (Dual Model Strategy)
+
+✅ **Observability**
+- LLM 호출 추적 (Langfuse)
+- 토큰 사용량 및 비용 모니터링
+- 프롬프트 개선을 위한 A/B 테스트
+
+✅ **실무 vs 최신 AI 기술 비교**
+- Node.js 코드 제어 → 에이전트 자율 실행
+- 하드코딩 → 프롬프트 엔지니어링
+- 수동 컨텍스트 전달 → 자동 컨텍스트 공유
+
+---
+
+## 👨‍💻 Author Background
+
+**DevOps Engineer → AI Security Portfolio**
+
+실무 경험:
+- **AWS EKS** 프로덕션 Kubernetes 클러스터 운영
+- **IaC (Terraform)** 인프라 자동화 및 형상 관리
+- **MSA** 마이크로서비스 아키텍처 기반 멀티 서비스 배포
+- **AWS Cloud** (Lambda, EventBridge, S3, RDS, VPC 등) 통합 운영
+- **DevSecOps** GitHub Actions → Trivy → Lambda → Bedrock → Security Hub 파이프라인 구축
+
+이 포트폴리오:
+- 실무 프로젝트의 한계(Node.js 코드 제어, 하드코딩 300줄, 컨텍스트 수동 전달)를 극복
+- 최신 AI 기술(CrewAI, LangChain, Tool Calling, Agentic Workflow)로 재설계
+- 확장 가능하고 유지보수가 쉬운 시스템 구현
+
+---
 
 ## 🤝 Contributing
 
-This is a portfolio project for demonstration purposes. The demo vulnerable application should never be deployed in production.
+이 프로젝트는 포트폴리오 목적으로 제작되었습니다. 데모 취약점 애플리케이션은 절대 프로덕션 환경에 배포하지 마세요.
+
+---
 
 ## 📄 License
 
@@ -239,7 +504,8 @@ MIT License
 
 ---
 
-**Portfolio Project**
+**🌐 Quick Access**
+- Security Agent UI: http://localhost:8501
+- Langfuse Dashboard: http://localhost:3001
 
-🌐 Access: http://localhost:8501
-📊 Traces: http://localhost:3001
+**🛡️ AI Security Agent Portfolio** - Agentic Workflow로 재구성한 DevSecOps 자동화 시스템
