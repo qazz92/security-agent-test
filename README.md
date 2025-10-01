@@ -188,60 +188,105 @@ result = crew.kickoff()
 
 ## 🔧 핵심 기술 구현
 
-### 1. LLM 기반 취약점 분류 (하드코딩 제거)
+### 1. 워크플로우 제어 방식의 차이
 
-**실무 방식**: 300줄 if/elif 체인
+**실무 방식**: Node.js 코드가 전체 워크플로우 제어
 ```javascript
-// SARIF 파싱 후 하드코딩 분류 (의사코드)
-if (ruleId.includes('sql')) return 'SQL_INJECTION';
-if (ruleId.includes('xss')) return 'XSS';
-// ... 50+ 취약점 타입
+// Node.js Lambda가 각 단계를 순차 실행 (의사코드)
+async function runSecurityPipeline() {
+  // 1. SARIF 파싱 (Node.js가 제어)
+  const sarif = JSON.parse(fs.readFileSync('trivy-results.sarif'));
+
+  // 2. LLM 검증 (AWS Bedrock 호출 - 온도 교차 검증)
+  const verified = await bedrockRuntime.invokeModel({
+    modelId: 'anthropic.claude-sonnet-4',
+    body: JSON.stringify({
+      prompt: `Verify SARIF vulnerabilities: ${JSON.stringify(sarif)}`,
+      temperature: 0.2
+    })
+  });
+
+  // 3. LLM 우선순위화 (Node.js가 결과 받아서 다음 단계로 전달)
+  const prioritized = await bedrockRuntime.invokeModel({
+    prompt: `Prioritize: ${verified}`,
+    temperature: 0.3
+  });
+
+  // 4. Security Hub 전송 (Node.js가 최종 처리)
+  await securityHub.batchImportFindings({Findings: prioritized});
+}
+// 문제: 모든 단계를 Node.js가 제어, LLM은 검증/우선순위화만 담당
 ```
 
-**포트폴리오 방식**: LLM 프롬프트 엔지니어링
+**포트폴리오 방식**: CrewAI Agent가 워크플로우 주도
 ```python
-# 50줄 프롬프트로 대체
-prompt = ChatPromptTemplate.from_messages([
-    ("system", """Classify into EXACT types:
-    - SQL_INJECTION, XSS, COMMAND_INJECTION, ...
-    Return ONLY the type."""),
-    ("user", "Rule ID: {rule_id}\nMessage: {message}")
-])
+# LLM Agent가 자율적으로 도구 선택하고 실행
+crew = Crew(
+    agents=[analyst, semgrep, triage, remediation],
+    tasks=[task1, task2, task3, task4],
+    process=Process.SEQUENTIAL  # Agent가 컨텍스트 자동 전달
+)
+
+# Agent가 상황에 맞게 Tool 호출
+# - Trivy 스캔 필요? → scan_with_trivy 호출
+# - 코드 분석 필요? → scan_with_semgrep 호출
+# - 우선순위 계산? → calculate_priority_score 호출
+result = crew.kickoff()  # LLM이 전체 워크플로우 주도
 ```
 
 **개선 효과**:
-- ✅ 300줄 코드 → 50줄 프롬프트
-- ✅ 새로운 Semgrep 룰 자동 대응
-- ✅ rule_id + message 컨텍스트 기반 정확도 향상
+- ✅ Node.js 제어 → Agent 자율 실행
+- ✅ 수동 컨텍스트 전달 → 자동 컨텍스트 공유
+- ✅ LLM 역할: 검증/우선순위화 → 전체 워크플로우 주도
 
-### 2. Dual Model Strategy (비용 최적화)
+### 2. Dual Model Strategy (작업별 최적 모델 선택)
 
 ```python
 # src/utils/model_selector.py
 class TaskComplexity(Enum):
-    # Thinking Model (복잡한 추론)
-    RISK_ASSESSMENT = "risk_assessment"
-    VULNERABILITY_TRIAGE = "vulnerability_triage"
+    # Thinking Model (복잡한 추론 및 생성)
+    CRITICAL_ANALYSIS = "critical_analysis"      # Security Analyst
+    VULNERABILITY_TRIAGE = "vulnerability_triage" # Triage Specialist
 
-    # Instruct Model (단순 실행)
-    TOOL_CALLING = "tool_calling"
-    DATA_FORMATTING = "data_formatting"
+    # Instruct Model (빠른 실행 및 포맷팅)
+    TOOL_CALLING = "tool_calling"  # Remediation Engineer
 
-# 작업별 모델 자동 선택
-triage_llm = model_selector.get_llm(
-    TaskComplexity.RISK_ASSESSMENT  # → Thinking Model
+# Agent별 모델 자동 선택
+# Security Analyst: Thinking Model (의존성 취약점 분석)
+security_analyst_llm = model_selector.get_llm(
+    TaskComplexity.CRITICAL_ANALYSIS
+)
+
+# Semgrep Specialist: Thinking Model (코드 레벨 취약점 분석)
+semgrep_specialist_llm = model_selector.get_llm(
+    TaskComplexity.CRITICAL_ANALYSIS
+)
+
+# Triage Specialist: Thinking Model (복잡한 리스크 평가 및 우선순위 결정)
+triage_specialist_llm = model_selector.get_llm(
+    TaskComplexity.VULNERABILITY_TRIAGE
+)
+
+# Remediation Engineer: Instruct Model (PR 템플릿 생성 및 포맷팅)
+# ※ 실제 코드 수정 생성(generate_fix_code)은 Thinking이 더 적합할 수 있으나,
+#    현재는 빠른 처리를 위해 Instruct 사용
+remediation_engineer_llm = model_selector.get_llm(
+    TaskComplexity.TOOL_CALLING
 )
 ```
 
-**비용 절감 효과**:
-```
-단일 모델: 1,000,000 tokens × $0.0020 = $2,000/월
+**모델 사용 현황**:
+- **Thinking Model**: Security Analyst, Semgrep Specialist, Triage Specialist
+- **Instruct Model**: Remediation Engineer (PR 템플릿/문서 생성)
 
-Dual Strategy:
-- Thinking: 200K tokens × $0.0020 = $400
-- Instruct: 800K tokens × $0.0010 = $800
-→ Total: $1,200/월 (40% 절감)
-```
+**OpenRouter 가격 (2025년 1월 기준):**
+- `qwen/qwen3-next-80b-a3b-thinking`: $0.10/M input, $0.80/M output
+- `qwen/qwen3-next-80b-a3b-instruct`: $0.10/M input, $0.80/M output
+
+**참고사항:**
+두 모델의 가격이 동일하므로 비용 절감보다는 **작업 특성에 맞는 모델 선택**이 목적입니다:
+- **Thinking Model**: 단계별 추론이 필요한 복잡한 분석 작업
+- **Instruct Model**: 빠르고 결정적인 응답이 필요한 포맷팅 작업
 
 ### 3. Langfuse Observability
 

@@ -145,19 +145,12 @@ class SecurityAgentUI:
                 help="Enter the path to the project you want to analyze"
             )
 
-            user_query = st.text_area(
-                "📝 Analysis Query (Optional)",
-                value="Comprehensive security analysis and remediation",
-                height=100,
-                help="Describe what specific security aspects you want to focus on"
-            )
-
         with col2:
             st.markdown("### 🎯 Quick Actions")
 
             if st.button("🚀 Start Analysis", type="primary", use_container_width=True):
                 if project_path and os.path.exists(project_path):
-                    self.run_security_analysis(project_path, user_query)
+                    self.run_security_analysis(project_path)
                 else:
                     st.error("❌ Project path does not exist!")
 
@@ -180,15 +173,14 @@ class SecurityAgentUI:
         if st.session_state.analysis_results:
             self.show_analysis_results()
 
-    def run_security_analysis(self, project_path: str, user_query: str):
+    def run_security_analysis(self, project_path: str):
         """보안 분석 실행"""
 
         # 분석 상태 초기화
         st.session_state.current_analysis = {
             "status": "running",
             "start_time": time.time(),
-            "project_path": project_path,
-            "user_query": user_query
+            "project_path": project_path
         }
 
         # 진행 상황 표시
@@ -211,7 +203,7 @@ class SecurityAgentUI:
             orchestrator = st.session_state.orchestrator
 
             # 동기적으로 실행
-            results = asyncio.run(orchestrator.analyze_and_remediate(project_path, user_query))
+            results = asyncio.run(orchestrator.analyze_and_remediate(project_path))
 
             progress_bar.progress(70)
             status_text.text("🔧 Generating remediation plans...")
@@ -230,7 +222,6 @@ class SecurityAgentUI:
             st.session_state.analysis_history.append({
                 "timestamp": datetime.now().isoformat(),
                 "project_path": project_path,
-                "user_query": user_query,
                 "results_summary": self.extract_results_summary(results)
             })
 
